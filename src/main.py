@@ -4,7 +4,14 @@ from typing import Annotated, List, Tuple
 
 import typer
 
-from . import FileType, Language, EncodingType, OnErrorType
+try:
+    from src.enumerations import FileType, Language, EncodingType, OnErrorType
+    from src.utils import encode, decode
+    from src.convert import convert as file_convert
+except ImportError:
+    from enumerations import FileType, Language, EncodingType, OnErrorType
+    from utils import encode, decode
+    from convert import convert as file_convert
 
 app = typer.Typer()
 
@@ -24,13 +31,9 @@ def convert(
     from_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.JSON,
     to_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.JSON,
     output: str = None,
+    show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
 ):
-    print(
-        f"""Filename: {filename} 
-            From: {from_type} 
-            To: {to_type}.
-            Output: {output}"""
-    )
+    file_convert(filename, from_type, to_type, output, show_stats)
 
 
 # ----------------------------------------------------------------
@@ -57,7 +60,7 @@ def excel(
 @dataset_app.command("translate")
 def dataset_translate(
     filename: str,
-    to: str,
+    to: Annotated[Language, typer.Option()] = Language.PORTUGUES,
     only_header: Annotated[bool, typer.Option("--only-header")] = False,
     output: str = None,
 ):
@@ -133,12 +136,12 @@ def dataset_decode(
 # ----------------------------------------------------------------
 @utils_app.command("encode")
 def utils_encode(from_value: str):
-    print(f"encoding {from_value} to...")
+    print(encode(from_value))
 
 
 @utils_app.command("decode")
 def utils_decode(from_value: str):
-    print(f"decoding {from_value} to...")
+    print(decode(from_value))
 
 
 # ----------------------------------------------------------------
