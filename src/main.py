@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
 
-from typing import Annotated, List, Tuple
+from typing_extensions import Annotated
+from typing import List, Tuple
 
 import typer
 
 try:
-    from src.enumerations import FileType, Language, EncodingType, OnErrorType
-    from src.utils import encode, decode
-    from src.convert import convert as file_convert
-except ImportError:
-    from enumerations import FileType, Language, EncodingType, OnErrorType
-    from utils import encode, decode
+    from structures import FileType, Language, EncodingType, OnErrorType
     from convert import convert as file_convert
+    from utils import encode as utils_encode, decode as utils_decode
+except:
+    from .structures import FileType, Language, EncodingType, OnErrorType
+    from .convert import convert as file_convert
+    from .utils import encode as utils_encode, decode as utils_decode
 
 app = typer.Typer()
 
@@ -28,12 +29,14 @@ app.add_typer(utils_app, name="utils")
 @app.command("convert")
 def convert(
     filename: str,
-    from_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.JSON,
+    from_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.CSV,
     to_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.JSON,
     output: str = None,
     show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
 ):
-    file_convert(filename, from_type, to_type, output, show_stats)
+    result = file_convert(filename, from_type, to_type, output, show_stats)
+    if result > 0:
+        raise typer.Exit(code=result)
 
 
 # ----------------------------------------------------------------
@@ -135,13 +138,21 @@ def dataset_decode(
 # Utils commands
 # ----------------------------------------------------------------
 @utils_app.command("encode")
-def utils_encode(from_value: str):
-    print(encode(from_value))
+def utils_encode2(from_value: str):
+    result = utils_encode(from_value)
+    if result:
+        print(result)
+    else:
+        raise typer.Exit(code=2)
 
 
 @utils_app.command("decode")
-def utils_decode(from_value: str):
-    print(decode(from_value))
+def utils_decode2(from_value: str):
+    result = utils_decode(from_value)
+    if result:
+        print(result)
+    else:
+        raise typer.Exit(code=2)
 
 
 # ----------------------------------------------------------------
