@@ -11,7 +11,7 @@ def encode(value):
             + return_value[len(return_value) - 1 :]
         )
         return return_value.decode("utf-8")
-    except:
+    except (AttributeError, UnicodeError):
         return None
 
 
@@ -19,7 +19,7 @@ def decode(value):
     try:
         try:
             encoded = value.encode()
-        except:
+        except AttributeError:
             encoded = value
         return_value = (
             encoded[len(encoded) - 3 : len(encoded) - 1]
@@ -28,5 +28,5 @@ def decode(value):
         )
         return_value = base64.b64decode(return_value)
         return return_value.decode()
-    except:
+    except (ValueError, AttributeError):
         return None

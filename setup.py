@@ -4,7 +4,7 @@ with open("README.md", "r", encoding="utf-8") as fhand:
     long_description = fhand.read()
 
 setuptools.setup(
-    name="wvcode-cli",
+    name="datatool",
     version="0.0.1",
     author="WVCode",
     author_email="contato@wvcode.com.br",
@@ -20,12 +20,12 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=["typer"],
+    install_requires=["typer", "typing_extensions", "polars"],
     packages=setuptools.find_packages(),
-    python_requires=">=3.9",
+    python_requires=">=3.10",
     entry_points={
         "console_scripts": [
-            "wvcode = src.main:app",
+            "datatool = src.main:app",
         ]
     },
 )

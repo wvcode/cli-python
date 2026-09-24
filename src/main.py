@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 
-from typing_extensions import Annotated
 from typing import List, Tuple
 
 import typer
+from typing_extensions import Annotated
 
 try:
-    from structures import FileType, Language, EncodingType, OnErrorType
     from convert import convert as file_convert
-    from utils import encode as utils_encode, decode as utils_decode
-except:
-    from .structures import FileType, Language, EncodingType, OnErrorType
+    from structures import EncodingType, FileType, Language, OnErrorType
+    from utils import decode as utils_decode
+    from utils import encode as utils_encode
+except ImportError:
     from .convert import convert as file_convert
-    from .utils import encode as utils_encode, decode as utils_decode
+    from .structures import EncodingType, FileType, Language, OnErrorType
+    from .utils import decode as utils_decode
+    from .utils import encode as utils_encode
 
 app = typer.Typer()
 

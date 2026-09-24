@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 
 import os
-import sys
-import pandas as pd
 
 try:
     from structures import read_function, save_function
-except:
+except ImportError:
     from .structures import read_function, save_function
 
 
@@ -28,8 +26,8 @@ def convert(filename, from_type, to_type, to_filename, show_stats):
         if df is None:
             print(f"Could not load file {filename} as {from_type}.")
             return 1
-    except:
-        print(f"Could not load file {filename} as {from_type}.")
+    except Exception as error:
+        print(f"Could not load file {filename} as {from_type}: {error}")
         return 1
 
     if show_stats:
@@ -38,7 +36,7 @@ def convert(filename, from_type, to_type, to_filename, show_stats):
 
     # Imprimir DataFrame para stdout se to_filename for None
     if to_filename is None:
-        print(df.to_string(index=False))
+        print(df)
         return 0
 
     # Verificar a permissão de gravação do diretório de saída
@@ -54,9 +52,6 @@ def convert(filename, from_type, to_type, to_filename, show_stats):
         df2 = None
         df2 = read_function[to_type](to_filename)
         print("Target saved")
-        if isinstance(df2, pd.DataFrame):
-            print(f"  - (rows, columns) = {df2.shape}")
-        else:
-            print(f"  - (rows, columns) = {len(df2[0]), 1}")
+        print(f"  - (rows, columns) = {df2.shape}")
 
     return 0
