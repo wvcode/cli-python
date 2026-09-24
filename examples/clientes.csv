@@ -1,0 +1,11 @@
+nome,email,cpf,data_nascimento,idade,cidade
+Ana Silva,ana.silva@example.com,11122233344,01/02/1990,30,São Paulo
+Bruno Costa,,22233344455,1985-07-15,25,Rio de Janeiro
+Carla Souza,carla.souza@example.com,33344455566,15-07-1985,N/D,Belo Horizonte
+Daniel Lima,daniel.lima@example.com,44455566677,1992/11/30,41,Curitiba
+Bruno Costa,,22233344455,1985-07-15,25,Rio de Janeiro
+Eduarda Alves,,55566677788,30-11-1992,29,Porto Alegre
+Fabio Pereira,fabio.pereira@example.com,66677788899,08/03/1978,52,Salvador
+Gabriela Dias,gabriela.dias@example.com,77788899900,1978-03-08,19,Recife
+Heitor Nunes,heitor.nunes@example.com,88899900011,20261301,37,Fortaleza
+Igor Ramos,igor.ramos@example.com,99900011122,05/09/2001,44,Manaus

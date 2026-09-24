@@ -32,7 +32,7 @@ class TestConvertCommand:
         with isolated_filesystem():
             result = runner.invoke(app, ["convert", "filename.txt"])
             print(str(result))
-            assert result.exit_code == 2  # missing required options
+            assert result.exit_code == 2  # arquivo inexistente
 
     def test_convert_full(self, runner):
         with isolated_filesystem():
@@ -44,16 +44,163 @@ class TestConvertCommand:
                 [
                     "convert",
                     "filename.txt",
+                    "output.csv",
                     "--from-type",
                     "csv",
                     "--to-type",
                     "csv",
-                    "--output",
-                    "output.csv",
                 ],
             )
             assert result.exit_code == 0
             assert result.stdout == ""  # no print statements
+
+    def test_convert_nonexistent_file(self, runner):
+        with isolated_filesystem():
+            result = runner.invoke(app, ["convert", "missing.csv", "output.json"])
+            assert result.exit_code != 0
+            assert "does not exist" in result.stdout
+
+    def test_convert_unsupported_extension(self, runner):
+        with isolated_filesystem():
+            with open("filename.txt", "w", encoding="utf8") as f:
+                f.write("A,B\n1,2\n")
+
+            result = runner.invoke(app, ["convert", "filename.txt", "output.txt"])
+            assert result.exit_code != 0
+            assert "Could not infer" in result.stdout
+
+    def test_convert_unwritable_directory(self, runner):
+        with isolated_filesystem():
+            with open("filename.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,2\n")
+
+            result = runner.invoke(
+                app, ["convert", "filename.csv", "no_such_dir/output.csv"]
+            )
+            assert result.exit_code != 0
+            assert "cannot be written" in result.stdout
+
+    @pytest.mark.parametrize(
+        "to_extension", ["json", "jsonl", "xlsx", "parquet", "sqlite"]
+    )
+    def test_convert_infers_type_from_extension_without_data_loss(
+        self, runner, to_extension
+    ):
+        with isolated_filesystem():
+            with open("origem.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n3,z\n")
+
+            to_filename = f"destino.{to_extension}"
+            result = runner.invoke(app, ["convert", "origem.csv", to_filename])
+            assert result.exit_code == 0
+
+            back_result = runner.invoke(app, ["convert", to_filename, "volta.csv"])
+            assert back_result.exit_code == 0
+            with open("volta.csv", encoding="utf8") as f:
+                assert f.read() == "A,B\n1,x\n2,y\n3,z\n"
+
+    def test_convert_show_stats(self, runner):
+        with isolated_filesystem():
+            with open("origem.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n3,z\n")
+
+            result = runner.invoke(
+                app, ["convert", "origem.csv", "destino.json", "--show-stats"]
+            )
+            assert result.exit_code == 0
+            assert "(3, 2)" in result.stdout
+
+
+class TestInfoCommand:
+    def test_info_nonexistent_file(self, runner):
+        with isolated_filesystem():
+            result = runner.invoke(app, ["info", "missing.csv"])
+            assert result.exit_code != 0
+            assert "does not exist" in result.stdout
+
+    def test_info_unsupported_extension(self, runner):
+        with isolated_filesystem():
+            with open("dados.txt", "w", encoding="utf8") as f:
+                f.write("A,B\n1,2\n")
+
+            result = runner.invoke(app, ["info", "dados.txt"])
+            assert result.exit_code != 0
+            assert "Could not infer" in result.stdout
+
+    def test_info_no_problems(self, runner):
+        with isolated_filesystem():
+            with open("limpo.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n3,z\n")
+
+            result = runner.invoke(app, ["info", "limpo.csv"])
+            assert result.exit_code == 0
+            assert "Linhas: 3" in result.stdout
+            assert "Colunas: 2" in result.stdout
+            assert "Nenhum problema encontrado." in result.stdout
+
+    def test_info_detects_nulls_and_suggests_clean(self, runner):
+        with isolated_filesystem():
+            with open("clientes.csv", "w", encoding="utf8") as f:
+                f.write("nome,email\nAna,ana@x.com\nBruno,\n")
+
+            result = runner.invoke(app, ["info", "clientes.csv"])
+            assert result.exit_code == 0
+            assert '1 valores nulos em "email"' in result.stdout
+            assert "datatool clean clientes.csv --drop-null" in result.stdout
+
+    def test_info_detects_duplicate_rows(self, runner):
+        with isolated_filesystem():
+            with open("clientes.csv", "w", encoding="utf8") as f:
+                f.write("nome,cidade\nAna,SP\nAna,SP\nBruno,RJ\n")
+
+            result = runner.invoke(app, ["info", "clientes.csv"])
+            assert result.exit_code == 0
+            assert "1 linhas duplicadas" in result.stdout
+            assert "datatool clean clientes.csv --remove-duplicates" in result.stdout
+
+    def test_info_detects_date_format_variance(self, runner):
+        with isolated_filesystem():
+            with open("clientes.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "nome,data_nascimento\n"
+                    "Ana,01/02/1990\n"
+                    "Bruno,1990-02-01\n"
+                    "Carla,02-01-1990\n"
+                    "Dan,1990/02/01\n"
+                )
+
+            result = runner.invoke(app, ["info", "clientes.csv"])
+            assert result.exit_code == 0
+            assert '"data_nascimento" contém' in result.stdout
+            assert "formatos de data diferentes" in result.stdout
+            assert "datatool clean clientes.csv --normalize-dates" in result.stdout
+
+    def test_info_detects_numeric_stored_as_text(self, runner):
+        with isolated_filesystem():
+            rows = "\n".join(f"nome{i},{i}" for i in range(9))
+            with open("clientes.csv", "w", encoding="utf8") as f:
+                f.write(f"nome,idade\n{rows}\nUltimo,N/D\n")
+
+            result = runner.invoke(app, ["info", "clientes.csv"])
+            assert result.exit_code == 0
+            assert '"idade" está armazenada como texto' in result.stdout
+            assert "datatool clean clientes.csv --fix-types" in result.stdout
+
+    def test_info_works_for_excel_and_parquet(self, runner):
+        with isolated_filesystem():
+            with open("origem.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n3,z\n")
+
+            for to_extension in ("xlsx", "parquet"):
+                to_filename = f"destino.{to_extension}"
+                convert_result = runner.invoke(
+                    app, ["convert", "origem.csv", to_filename]
+                )
+                assert convert_result.exit_code == 0
+
+                result = runner.invoke(app, ["info", to_filename])
+                assert result.exit_code == 0
+                assert "Linhas: 3" in result.stdout
 
 
 class TestUtilsEncodeCommand:

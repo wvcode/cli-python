@@ -20,7 +20,13 @@ setuptools.setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    install_requires=["typer", "typing_extensions", "polars"],
+    install_requires=[
+        "typer",
+        "typing_extensions",
+        "polars",
+        "fastexcel",
+        "xlsxwriter",
+    ],
     packages=setuptools.find_packages(),
     python_requires=">=3.10",
     entry_points={

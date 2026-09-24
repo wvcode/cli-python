@@ -4,8 +4,8 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 
 | # | Spec | Camada | Status atual | Depende de |
 |---|------|--------|---------------|------------|
-| 001 | [Converter arquivo entre formatos](001-convert.md) | Conversão | Parcial — falta Excel/JSONL/SQLite | — |
-| 002 | [Diagnóstico automático ao abrir um arquivo](002-info-diagnostico.md) | Diagnóstico | Não implementado | 001 |
+| 001 | [Converter arquivo entre formatos](001-convert.md) | Conversão | Implementado | — |
+| 002 | [Diagnóstico automático ao abrir um arquivo](002-info-diagnostico.md) | Diagnóstico | Implementado | 001 |
 | 003 | [Profiling estatístico de um dataset](003-profile-estatistico.md) | Profiling | Não implementado | 001 |
 | 004 | [Relatório de profiling em HTML](004-profile-relatorio-html.md) | Profiling (Pro) | Não implementado | 003 |
 | 005 | [Detectar problemas de qualidade](005-clean-detectar-problemas.md) | Cleaning | Não implementado | 001 |

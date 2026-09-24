@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import typer
 from typing_extensions import Annotated
 
 try:
     from convert import convert as file_convert
+    from info import info as file_info
     from structures import EncodingType, FileType, Language, OnErrorType
     from utils import decode as utils_decode
     from utils import encode as utils_encode
 except ImportError:
     from .convert import convert as file_convert
+    from .info import info as file_info
     from .structures import EncodingType, FileType, Language, OnErrorType
     from .utils import decode as utils_decode
     from .utils import encode as utils_encode
@@ -31,12 +33,24 @@ app.add_typer(utils_app, name="utils")
 @app.command("convert")
 def convert(
     filename: str,
-    from_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.CSV,
-    to_type: Annotated[FileType, typer.Option(case_sensitive=False)] = FileType.JSON,
-    output: str = None,
+    to_filename: Optional[str] = typer.Argument(None),
+    from_type: Annotated[
+        Optional[FileType], typer.Option(case_sensitive=False)
+    ] = None,
+    to_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
     show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
 ):
-    result = file_convert(filename, from_type, to_type, output, show_stats)
+    result = file_convert(filename, from_type, to_type, to_filename, show_stats)
+    if result > 0:
+        raise typer.Exit(code=result)
+
+
+# ----------------------------------------------------------------
+# Info commands
+# ----------------------------------------------------------------
+@app.command("info")
+def info(filename: str):
+    result = file_info(filename)
     if result > 0:
         raise typer.Exit(code=result)
 
