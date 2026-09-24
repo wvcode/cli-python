@@ -84,11 +84,85 @@ Sugestões:
 
 Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes.csv](examples/clientes.csv).
 
+### `profile` — profiling estatístico de um dataset
+
+```bash
+datatool profile vendas.csv
+datatool profile vendas.csv --key cpf
+```
+
+Para cada coluna, mostra contagem e percentual de nulos, e:
+
+- **colunas numéricas**: min, max, média, mediana, desvio padrão, percentis (25/50/75) e outliers (método IQR)
+- **colunas categóricas/texto**: cardinalidade e top 5 valores mais frequentes (com percentual)
+
+Também reporta a quantidade de linhas totalmente duplicadas e, com `--key coluna1,coluna2`, a quantidade de duplicidades considerando apenas essas colunas como chave.
+
+```text
+Arquivo: clientes.csv
+Linhas: 10
+Colunas: 6
+Linhas duplicadas: 1
+Linhas duplicadas (chave: cpf): 1
+
+Coluna "cpf" (numérica)
+  Nulos: 0 (0.00%)
+  Min: 11122233344.00  Max: 99900011122.00  Média: 52222222221.70  Mediana: 50011122232.50  Desvio padrão: 30544672345.70
+  Percentis: p25=22233344455.00  p50=55566677788.00  p75=77788899900.00
+  Outliers (IQR): 0
+
+Coluna "cidade" (categórica)
+  Nulos: 0 (0.00%)
+  Cardinalidade: 9
+  Top 5 valores:
+    Rio de Janeiro: 2 (20.00%)
+    São Paulo: 1 (10.00%)
+    ...
+```
+
+### `clean` — detectar problemas de qualidade por coluna
+
+```bash
+datatool clean clientes.csv
+```
+
+Sem nenhuma flag, é somente leitura/diagnóstico — **não grava nenhum arquivo**. Detecta, por coluna:
+
+- valores inválidos (ex.: e-mail fora do formato)
+- variação de formato (ex.: telefone em formatos diferentes)
+- espaços extras nas bordas dos valores
+- duplicidade por chave (coluna majoritariamente única com alguns valores repetidos, ex.: CPF)
+- inconsistência de capitalização (ex.: "Porto Alegre" / "PORTO ALEGRE" / "porto alegre")
+
+```text
+Arquivo: clientes_sujos.csv
+Linhas: 20
+Colunas: 5
+
+nome
+  1 registros com espaços extras
+
+email
+  1 valores inválidos
+
+telefone
+  3 formatos diferentes
+
+cpf
+  1 valores duplicados
+
+cidade
+  "PORTO ALEGRE"
+  "Porto Alegre"
+  "porto alegre"
+```
+
+Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](examples/clientes_sujos.csv). As operações de correção (`--fix-types`, `--remove-duplicates`, etc., sugeridas pelo `info`) ainda não existem — acompanhe o status em [specs/README.md](specs/README.md).
+
 ### Em desenvolvimento
 
 Os comandos abaixo já existem no CLI como esqueleto, mas ainda não implementam a lógica final — acompanhe o status em [specs/README.md](specs/README.md):
 
-- `datatool clean` — limpeza de dados (duplicidades, nulos, tipos, datas, colunas)
 - `datatool dataset translate|explain|transform|decode`
 - `datatool excel` — inspeção/limpeza de planilhas Excel
 

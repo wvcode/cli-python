@@ -6,9 +6,9 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 |---|------|--------|---------------|------------|
 | 001 | [Converter arquivo entre formatos](001-convert.md) | Conversão | Implementado | — |
 | 002 | [Diagnóstico automático ao abrir um arquivo](002-info-diagnostico.md) | Diagnóstico | Implementado | 001 |
-| 003 | [Profiling estatístico de um dataset](003-profile-estatistico.md) | Profiling | Não implementado | 001 |
+| 003 | [Profiling estatístico de um dataset](003-profile-estatistico.md) | Profiling | Implementado | 001 |
 | 004 | [Relatório de profiling em HTML](004-profile-relatorio-html.md) | Profiling (Pro) | Não implementado | 003 |
-| 005 | [Detectar problemas de qualidade](005-clean-detectar-problemas.md) | Cleaning | Não implementado | 001 |
+| 005 | [Detectar problemas de qualidade](005-clean-detectar-problemas.md) | Cleaning | Implementado | 001 |
 | 006 | [Operadores de limpeza de texto](006-clean-operadores-string.md) | Cleaning | Não implementado | 001 |
 | 007 | [Remover duplicidades](007-clean-remover-duplicidades.md) | Cleaning | Não implementado | 001 |
 | 008 | [Tratar valores nulos](008-clean-tratar-nulos.md) | Cleaning | Não implementado | 001 |

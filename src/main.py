@@ -6,14 +6,18 @@ import typer
 from typing_extensions import Annotated
 
 try:
+    from clean import clean as file_clean
     from convert import convert as file_convert
     from info import info as file_info
+    from profiler import profile as file_profile
     from structures import EncodingType, FileType, Language, OnErrorType
     from utils import decode as utils_decode
     from utils import encode as utils_encode
 except ImportError:
+    from .clean import clean as file_clean
     from .convert import convert as file_convert
     from .info import info as file_info
+    from .profiler import profile as file_profile
     from .structures import EncodingType, FileType, Language, OnErrorType
     from .utils import decode as utils_decode
     from .utils import encode as utils_encode
@@ -51,6 +55,32 @@ def convert(
 @app.command("info")
 def info(filename: str):
     result = file_info(filename)
+    if result > 0:
+        raise typer.Exit(code=result)
+
+
+# ----------------------------------------------------------------
+# Profile commands
+# ----------------------------------------------------------------
+@app.command("profile")
+def profile(
+    filename: str,
+    key: Annotated[
+        Optional[str],
+        typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
+    ] = None,
+):
+    result = file_profile(filename, key)
+    if result > 0:
+        raise typer.Exit(code=result)
+
+
+# ----------------------------------------------------------------
+# Clean commands
+# ----------------------------------------------------------------
+@app.command("clean")
+def clean(filename: str):
+    result = file_clean(filename)
     if result > 0:
         raise typer.Exit(code=result)
 

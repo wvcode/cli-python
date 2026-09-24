@@ -203,6 +203,187 @@ class TestInfoCommand:
                 assert "Linhas: 3" in result.stdout
 
 
+class TestProfileCommand:
+    def test_profile_nonexistent_file(self, runner):
+        with isolated_filesystem():
+            result = runner.invoke(app, ["profile", "missing.csv"])
+            assert result.exit_code != 0
+            assert "does not exist" in result.stdout
+
+    def test_profile_unsupported_extension(self, runner):
+        with isolated_filesystem():
+            with open("dados.txt", "w", encoding="utf8") as f:
+                f.write("A,B\n1,2\n")
+
+            result = runner.invoke(app, ["profile", "dados.txt"])
+            assert result.exit_code != 0
+            assert "Could not infer" in result.stdout
+
+    def test_profile_unknown_key_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--key", "C"])
+            assert result.exit_code != 0
+            assert "Unknown column" in result.stdout
+
+    def test_profile_numeric_column_stats(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("idade\n" + "\n".join(str(v) for v in range(1, 10)) + "\n100\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv"])
+            assert result.exit_code == 0
+            assert 'Coluna "idade" (numérica)' in result.stdout
+            assert "Min: 1.00" in result.stdout
+            assert "Max: 100.00" in result.stdout
+            assert "Média:" in result.stdout
+            assert "Mediana:" in result.stdout
+            assert "Desvio padrão:" in result.stdout
+            assert "Percentis: p25=" in result.stdout
+            assert "Outliers (IQR): 1" in result.stdout
+
+    def test_profile_categorical_column_stats(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nSP\nSP\nSP\nRJ\nRJ\nMG\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv"])
+            assert result.exit_code == 0
+            assert 'Coluna "cidade" (categórica)' in result.stdout
+            assert "Cardinalidade: 3" in result.stdout
+            assert "SP: 3 (50.00%)" in result.stdout
+
+    def test_profile_null_count_and_percent(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("email\na@x.com\n\nb@x.com\n\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv"])
+            assert result.exit_code == 0
+            assert "Nulos: 2 (50.00%)" in result.stdout
+
+    def test_profile_duplicate_rows(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,cidade\nAna,SP\nAna,SP\nBruno,RJ\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv"])
+            assert result.exit_code == 0
+            assert "Linhas duplicadas: 1" in result.stdout
+
+    def test_profile_duplicate_by_key(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,cpf\nAna,111\nAna Silva,111\nBruno,222\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--key", "cpf"])
+            assert result.exit_code == 0
+            assert "Linhas duplicadas: 0" in result.stdout
+            assert "Linhas duplicadas (chave: cpf): 1" in result.stdout
+
+
+class TestCleanCommand:
+    def test_clean_nonexistent_file(self, runner):
+        with isolated_filesystem():
+            result = runner.invoke(app, ["clean", "missing.csv"])
+            assert result.exit_code != 0
+            assert "does not exist" in result.stdout
+
+    def test_clean_unsupported_extension(self, runner):
+        with isolated_filesystem():
+            with open("dados.txt", "w", encoding="utf8") as f:
+                f.write("A,B\n1,2\n")
+
+            result = runner.invoke(app, ["clean", "dados.txt"])
+            assert result.exit_code != 0
+            assert "Could not infer" in result.stdout
+
+    def test_clean_no_problems(self, runner):
+        with isolated_filesystem():
+            with open("limpo.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n3,z\n")
+
+            result = runner.invoke(app, ["clean", "limpo.csv"])
+            assert result.exit_code == 0
+            assert "Nenhum problema encontrado." in result.stdout
+
+    def test_clean_does_not_write_any_file(self, runner):
+        with isolated_filesystem() as tmp_dir:
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n3,z\n")
+
+            runner.invoke(app, ["clean", "dados.csv"])
+            assert os.listdir(tmp_dir) == ["dados.csv"]
+
+    def test_clean_detects_invalid_emails(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "email\n"
+                    "ana@x.com\n"
+                    "bruno@x.com\n"
+                    "invalido-sem-arroba\n"
+                    "carla@x.com\n"
+                )
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "email" in result.stdout
+            assert "1 valores inválidos" in result.stdout
+
+    def test_clean_detects_phone_format_variance(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "telefone\n"
+                    "(11) 91234-5678\n"
+                    "11 91234-5678\n"
+                    "11912345678\n"
+                    "(11) 98888-1234\n"
+                )
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "telefone" in result.stdout
+            assert "formatos diferentes" in result.stdout
+
+    def test_clean_detects_whitespace(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n  Bruno  \nCarla\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "nome" in result.stdout
+            assert "1 registros com espaços extras" in result.stdout
+
+    def test_clean_detects_key_duplicates(self, runner):
+        with isolated_filesystem():
+            cpfs = [str(10000000000 + i) for i in range(20)]
+            cpfs[10] = cpfs[9]
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n" + "\n".join(cpfs) + "\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "cpf" in result.stdout
+            assert "1 valores duplicados" in result.stdout
+
+    def test_clean_detects_case_inconsistency(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPorto Alegre\nPORTO ALEGRE\nporto alegre\nCuritiba\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "cidade" in result.stdout
+            assert '"Porto Alegre"' in result.stdout
+            assert '"PORTO ALEGRE"' in result.stdout
+            assert '"porto alegre"' in result.stdout
+
+
 class TestUtilsEncodeCommand:
     def test_default(self, runner):
         result = runner.invoke(app, ["utils", "encode", "from_value"])

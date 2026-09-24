@@ -1,0 +1,21 @@
+nome,email,telefone,cpf,cidade
+Pessoa 1,pessoa1@example.com,(11) 91234-5678,10000000001,Porto Alegre
+Pessoa 2,pessoa2@example.com,11 91234-5678,10000000002,Porto Alegre
+  Pessoa 3  ,invalido-sem-arroba,11912345678,10000000003,Porto Alegre
+Pessoa 4,pessoa4@example.com,(11) 98888-1234,10000000004,Porto Alegre
+Pessoa 5,pessoa5@example.com,(11) 91234-5678,10000000005,Porto Alegre
+Pessoa 6,pessoa6@example.com,11 91234-5678,10000000006,Porto Alegre
+Pessoa 7,pessoa7@example.com,11912345678,10000000007,Porto Alegre
+Pessoa 8,pessoa8@example.com,(11) 98888-1234,10000000008,Porto Alegre
+Pessoa 9,pessoa9@example.com,(11) 91234-5678,10000000009,Porto Alegre
+Pessoa 10,pessoa10@example.com,11 91234-5678,10000000010,Porto Alegre
+Pessoa 11,pessoa11@example.com,11912345678,10000000010,PORTO ALEGRE
+Pessoa 12,pessoa12@example.com,(11) 98888-1234,10000000012,PORTO ALEGRE
+Pessoa 13,pessoa13@example.com,(11) 91234-5678,10000000013,PORTO ALEGRE
+Pessoa 14,pessoa14@example.com,11 91234-5678,10000000014,PORTO ALEGRE
+Pessoa 15,pessoa15@example.com,11912345678,10000000015,PORTO ALEGRE
+Pessoa 16,pessoa16@example.com,(11) 98888-1234,10000000016,porto alegre
+Pessoa 17,pessoa17@example.com,(11) 91234-5678,10000000017,porto alegre
+Pessoa 18,pessoa18@example.com,11 91234-5678,10000000018,porto alegre
+Pessoa 19,pessoa19@example.com,11912345678,10000000019,porto alegre
+Pessoa 20,pessoa20@example.com,(11) 98888-1234,10000000020,porto alegre
