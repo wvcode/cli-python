@@ -1,8 +1,13 @@
 # datatool Python CLI
 
-Command line tool para manipulação de datasets de maneira facilitada: converter entre formatos, diagnosticar problemas de qualidade e (em breve) limpar dados — tudo pela linha de comando.
+Command line tool para manipulação de datasets de maneira facilitada: converter entre formatos, diagnosticar problemas de qualidade, gerar profiling estatístico e limpar dados — tudo pela linha de comando.
 
 O roadmap completo, com o status de cada funcionalidade, está em [specs/README.md](specs/README.md).
+
+## Status
+
+- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`)
+- **Ainda não implementado**: `clean --fix-types`/`--normalize-dates`/`--rename-columns`/`--remove-columns`, `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
 
@@ -61,7 +66,7 @@ Mostra linhas, colunas e tamanho do arquivo, além de detectar automaticamente:
 - colunas com múltiplos formatos de data
 - colunas numéricas armazenadas como texto
 
-Para cada problema encontrado, sugere o comando `datatool clean` correspondente (a implementar — veja [specs/README.md](specs/README.md)). Funciona para CSV, JSON, Excel e Parquet.
+Para cada problema encontrado, sugere o comando `datatool clean` correspondente. Hoje `--remove-duplicates` e `--drop-null` já existem; `--fix-types` e `--normalize-dates` ainda não (veja [specs/README.md](specs/README.md)). Funciona para CSV, JSON, Excel e Parquet.
 
 ```text
 Arquivo: clientes.csv
@@ -120,7 +125,7 @@ Coluna "cidade" (categórica)
     ...
 ```
 
-### `clean` — detectar problemas de qualidade por coluna
+### `clean` — detectar e corrigir problemas de qualidade
 
 ```bash
 datatool clean clientes.csv
@@ -157,7 +162,53 @@ cidade
   "porto alegre"
 ```
 
-Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](examples/clientes_sujos.csv). As operações de correção (`--fix-types`, `--remove-duplicates`, etc., sugeridas pelo `info`) ainda não existem — acompanhe o status em [specs/README.md](specs/README.md).
+Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](examples/clientes_sujos.csv).
+
+Com pelo menos uma flag de operação, o comando passa a transformar os dados (só em colunas de texto — colunas numéricas, por exemplo, não são alteradas) e mostra o resultado: grava em `--output arquivo` (formato inferido pela extensão, igual ao `convert`) ou, se omitido, imprime o DataFrame no stdout. Nada é gravado por padrão.
+
+```bash
+datatool clean clientes.csv --trim --normalize-case --output clientes_limpo.csv
+datatool clean clientes.csv --lowercase --output clientes_limpo.csv
+datatool clean clientes.csv --uppercase --output clientes_limpo.csv
+```
+
+- `--trim` remove espaços extras nas bordas
+- `--lowercase` / `--uppercase` convertem a caixa de todo o texto da coluna
+- `--normalize-case` unifica variações de capitalização em title case (`"PORTO ALEGRE"`/`"porto alegre"` → `"Porto Alegre"`)
+- As flags são combináveis; quando combinadas, são aplicadas na ordem `--trim` → `--lowercase` → `--uppercase` → `--normalize-case`
+
+```text
+nome,email,telefone,cpf,cidade
+Pessoa 1,Pessoa1@Example.Com,(11) 91234-5678,10000000001,Porto Alegre
+Pessoa 2,Pessoa2@Example.Com,11 91234-5678,10000000002,Porto Alegre
+Pessoa 3,Invalido-Sem-Arroba,11912345678,10000000003,Porto Alegre
+```
+
+`--remove-duplicates` remove linhas duplicadas, mantendo a primeira ocorrência, e reporta quantas foram removidas:
+
+```bash
+datatool clean clientes.csv --remove-duplicates
+datatool clean clientes.csv --remove-duplicates --key cpf --output clientes_limpo.csv
+```
+
+- Por padrão considera a linha inteira (todas as colunas iguais); `--key coluna1,coluna2` deduplica por um subconjunto de colunas
+- A quantidade de linhas removidas é sempre impressa, mesmo gravando em arquivo via `--output`
+- Combinável com as flags de texto acima — quando combinadas, `--trim`/`--lowercase`/`--uppercase`/`--normalize-case` rodam **antes** da remoção de duplicidades, então linhas que só diferiam por espaço ou capitalização também são deduplicadas
+
+`--fill-null`/`--drop-null` tratam valores nulos e reportam quantas células/linhas foram afetadas:
+
+```bash
+datatool clean clientes.csv --fill-null "N/A"
+datatool clean clientes.csv --fill-null "idade:0" --output clientes_limpo.csv
+datatool clean clientes.csv --drop-null
+datatool clean clientes.csv --drop-null --columns email --output clientes_limpo.csv
+```
+
+- `--fill-null valor` (sem `:`) preenche nulos só nas colunas de texto — evita converter uma coluna numérica inteira para texto ao preencher com um valor não numérico
+- `--fill-null coluna:valor` preenche só essa coluna, convertendo o valor para o tipo da coluna quando ela é numérica; é repetível (`--fill-null "N/A" --fill-null "idade:0"`)
+- `--drop-null` remove linhas com nulos em qualquer coluna por padrão, ou só nas colunas de `--columns coluna1,coluna2`
+
+As demais operações de correção (`--fix-types`, `--normalize-dates`, `--rename-columns`/`--remove-columns`) ainda não existem — acompanhe o status em [specs/README.md](specs/README.md).
 
 ### Em desenvolvimento
 

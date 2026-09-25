@@ -79,8 +79,46 @@ def profile(
 # Clean commands
 # ----------------------------------------------------------------
 @app.command("clean")
-def clean(filename: str):
-    result = file_clean(filename)
+def clean(
+    filename: str,
+    trim: Annotated[bool, typer.Option("--trim")] = False,
+    lowercase: Annotated[bool, typer.Option("--lowercase")] = False,
+    uppercase: Annotated[bool, typer.Option("--uppercase")] = False,
+    normalize_case: Annotated[bool, typer.Option("--normalize-case")] = False,
+    remove_duplicates: Annotated[
+        bool, typer.Option("--remove-duplicates")
+    ] = False,
+    key: Annotated[
+        Optional[str],
+        typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
+    ] = None,
+    fill_null: Annotated[
+        Optional[List[str]],
+        typer.Option(
+            "--fill-null",
+            help="Valor para preencher nulos, ou coluna:valor. Repetível.",
+        ),
+    ] = None,
+    drop_null: Annotated[bool, typer.Option("--drop-null")] = False,
+    columns: Annotated[
+        Optional[str],
+        typer.Option(help="Colunas alvo de --drop-null, separadas por vírgula"),
+    ] = None,
+    output: Annotated[Optional[str], typer.Option("--output")] = None,
+):
+    result = file_clean(
+        filename,
+        trim,
+        lowercase,
+        uppercase,
+        normalize_case,
+        remove_duplicates,
+        key,
+        fill_null,
+        drop_null,
+        columns,
+        output,
+    )
     if result > 0:
         raise typer.Exit(code=result)
 

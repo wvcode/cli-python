@@ -9,9 +9,9 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 | 003 | [Profiling estatístico de um dataset](003-profile-estatistico.md) | Profiling | Implementado | 001 |
 | 004 | [Relatório de profiling em HTML](004-profile-relatorio-html.md) | Profiling (Pro) | Não implementado | 003 |
 | 005 | [Detectar problemas de qualidade](005-clean-detectar-problemas.md) | Cleaning | Implementado | 001 |
-| 006 | [Operadores de limpeza de texto](006-clean-operadores-string.md) | Cleaning | Não implementado | 001 |
-| 007 | [Remover duplicidades](007-clean-remover-duplicidades.md) | Cleaning | Não implementado | 001 |
-| 008 | [Tratar valores nulos](008-clean-tratar-nulos.md) | Cleaning | Não implementado | 001 |
+| 006 | [Operadores de limpeza de texto](006-clean-operadores-string.md) | Cleaning | Implementado | 001, 005 |
+| 007 | [Remover duplicidades](007-clean-remover-duplicidades.md) | Cleaning | Implementado | 001, 006 |
+| 008 | [Tratar valores nulos](008-clean-tratar-nulos.md) | Cleaning | Implementado | 001, 006, 007 |
 | 009 | [Normalizar formatos de data](009-clean-normalizar-datas.md) | Cleaning | Não implementado | 001 |
 | 010 | [Corrigir tipos de colunas](010-clean-corrigir-tipos.md) | Cleaning | Não implementado | 001 |
 | 011 | [Renomear e remover colunas](011-clean-colunas.md) | Cleaning | Não implementado | 001 |
@@ -24,6 +24,12 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 ## MVP v0.1
 
 Segundo a ideia, o menor produto funcional cobre: **001, 002, 003, 005, 006, 007, 008, 009, 010, 011** (comandos `info`, `profile`, `convert`, `clean` com os ~10 operadores básicos). As demais specs (004, 012-016) são evoluções pós-MVP e concentram o potencial de monetização Pro.
+
+**Progresso do MVP: 7/10** — implementadas 001, 002, 003, 005, 006, 007, 008. Faltam 009 (normalizar datas), 010 (corrigir tipos) e 011 (renomear/remover colunas).
+
+## Além das specs
+
+Propostas de features ainda sem spec (lacunas encontradas no código, itens da ideia sem spec e oportunidades para o mercado BR) estão em [backlog-novas-features.md](backlog-novas-features.md).
 
 ## Template usado em cada spec
 - User story (Como / eu quero / para que)

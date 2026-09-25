@@ -384,6 +384,345 @@ class TestCleanCommand:
             assert '"porto alegre"' in result.stdout
 
 
+class TestCleanStringOperators:
+    def test_clean_trim_writes_output_file(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\n  Ana  \nBruno\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--trim", "--output", "saida.csv"]
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome\nAna\nBruno\n"
+
+    def test_clean_lowercase(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nANA\nBruno\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--lowercase", "--output", "saida.csv"]
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome\nana\nbruno\n"
+
+    def test_clean_uppercase(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nana\nBruno\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--uppercase", "--output", "saida.csv"]
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome\nANA\nBRUNO\n"
+
+    def test_clean_normalize_case_unifies_variants(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPORTO ALEGRE\nporto alegre\nPorto Alegre\n")
+
+            result = runner.invoke(
+                app,
+                ["clean", "dados.csv", "--normalize-case", "--output", "saida.csv"],
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "cidade\nPorto Alegre\nPorto Alegre\nPorto Alegre\n"
+
+    def test_clean_combines_flags(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\n  PORTO ALEGRE  \nporto alegre\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--trim",
+                    "--normalize-case",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "cidade\nPorto Alegre\nPorto Alegre\n"
+
+    def test_clean_does_not_alter_non_text_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,idade\n  Ana  ,30\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--trim", "--output", "saida.csv"]
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,idade\nAna,30\n"
+
+    def test_clean_operator_without_output_prints_to_stdout(self, runner):
+        with isolated_filesystem() as tmp_dir:
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\n  Ana  \n")
+
+            result = runner.invoke(app, ["clean", "dados.csv", "--trim"])
+            assert result.exit_code == 0
+            assert "Ana" in result.stdout
+            assert os.listdir(tmp_dir) == ["dados.csv"]
+
+    def test_clean_output_unwritable_directory(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\n  Ana  \n")
+
+            result = runner.invoke(
+                app,
+                ["clean", "dados.csv", "--trim", "--output", "no_such_dir/saida.csv"],
+            )
+            assert result.exit_code != 0
+            assert "cannot be written" in result.stdout
+
+
+class TestCleanRemoveDuplicates:
+    def test_removes_full_row_duplicates_keeping_first(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,cidade\nAna,SP\nAna,SP\nBruno,RJ\nCarla,MG\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--remove-duplicates",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "1 linhas removidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,cidade\nAna,SP\nBruno,RJ\nCarla,MG\n"
+
+    def test_removes_duplicates_by_key(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,cpf\nAna,111\nAna Silva,111\nBruno,222\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--remove-duplicates",
+                    "--key",
+                    "cpf",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "1 linhas removidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,cpf\nAna,111\nBruno,222\n"
+
+    def test_unknown_key_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,cpf\nAna,111\nBruno,222\n")
+
+            result = runner.invoke(
+                app,
+                ["clean", "dados.csv", "--remove-duplicates", "--key", "naoexiste"],
+            )
+            assert result.exit_code != 0
+            assert "Unknown column" in result.stdout
+
+    def test_no_duplicates_reports_zero_removed(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\nBruno\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv", "--remove-duplicates"])
+            assert result.exit_code == 0
+            assert "0 linhas removidas" in result.stdout
+
+    def test_combines_with_string_operators(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\n  PORTO ALEGRE  \nporto alegre\nCuritiba\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--trim",
+                    "--normalize-case",
+                    "--remove-duplicates",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "1 linhas removidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "cidade\nPorto Alegre\nCuritiba\n"
+
+
+class TestCleanFillNull:
+    def test_fill_null_global_applies_only_to_text_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,idade\nAna,\nBruno,25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--fill-null",
+                    "N/A",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "0 células preenchidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,idade\nAna,\nBruno,25\n"
+
+    def test_fill_null_global_text_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("email\n\nbruno@x.com\n\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--fill-null",
+                    "N/A",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "2 células preenchidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "email\nN/A\nbruno@x.com\nN/A\n"
+
+    def test_fill_null_per_column_casts_to_column_type(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("idade\n\n25\n\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--fill-null",
+                    "idade:0",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "2 células preenchidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "idade\n0\n25\n0\n"
+
+    def test_fill_null_multiple_specs_combine(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("email,idade\n,\nbruno@x.com,25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--fill-null",
+                    "N/A",
+                    "--fill-null",
+                    "idade:0",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "2 células preenchidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "email,idade\nN/A,0\nbruno@x.com,25\n"
+
+    def test_fill_null_unknown_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--fill-null", "naoexiste:0"]
+            )
+            assert result.exit_code != 0
+            assert "Unknown column" in result.stdout
+
+
+class TestCleanDropNull:
+    def test_drop_null_default_all_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,email\nAna,\n,bruno@x.com\nCarla,carla@x.com\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--drop-null", "--output", "saida.csv"]
+            )
+            assert result.exit_code == 0
+            assert "2 linhas removidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,email\nCarla,carla@x.com\n"
+
+    def test_drop_null_specific_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,email\nAna,\n,bruno@x.com\nCarla,carla@x.com\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--drop-null",
+                    "--columns",
+                    "email",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "1 linhas removidas" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,email\n,bruno@x.com\nCarla,carla@x.com\n"
+
+    def test_drop_null_unknown_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--drop-null", "--columns", "naoexiste"]
+            )
+            assert result.exit_code != 0
+            assert "Unknown column" in result.stdout
+
+
 class TestUtilsEncodeCommand:
     def test_default(self, runner):
         result = runner.invoke(app, ["utils", "encode", "from_value"])
