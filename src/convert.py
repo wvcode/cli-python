@@ -3,42 +3,62 @@
 import os
 
 try:
-    from structures import infer_file_type, read_function, save_function
+    from reporting import fail
+    from structures import (
+        OutputFormat,
+        csv_options_error,
+        infer_file_type,
+        read_file,
+        save_file,
+    )
 except ImportError:
-    from .structures import infer_file_type, read_function, save_function
+    from .reporting import fail
+    from .structures import (
+        OutputFormat,
+        csv_options_error,
+        infer_file_type,
+        read_file,
+        save_file,
+    )
 
 
-def convert(filename, from_type, to_type, to_filename, show_stats):
+def _fail(message, exit_code):
+    return fail(OutputFormat.TEXT, "convert", message, exit_code)
+
+
+def convert(
+    filename, from_type, to_type, to_filename, show_stats, sep=None, encoding=None
+):
     # Verificar a existência e a validade do arquivo de entrada
     if not os.path.exists(filename):
-        print(f"The file provided {filename} does not exist.")
-        return 2
+        return _fail(f"The file provided {filename} does not exist.", 2)
     if not os.path.isfile(filename):
-        print(f"The file provided {filename} is not a valid file.")
-        return 2
+        return _fail(f"The file provided {filename} is not a valid file.", 2)
 
     # Inferir o formato de entrada pela extensão, se não informado
     if from_type is None:
         from_type = infer_file_type(filename)
         if from_type is None:
-            print(
+            return _fail(
                 f"Could not infer the format of {filename} from its extension. "
-                "Use --from-type to specify it explicitly."
+                "Use --from-type to specify it explicitly.",
+                2,
             )
-            return 2
+
+    options_error = csv_options_error(from_type, sep, encoding)
+    if options_error:
+        return _fail(options_error, 2)
 
     # Ler o arquivo de entrada
     try:
         df = None
-        df = read_function[from_type](filename)
+        df = read_file(from_type, filename, sep, encoding)
 
         # Se nenhum DataFrame foi carregado, saia da função
         if df is None:
-            print(f"Could not load file {filename} as {from_type}.")
-            return 1
+            return _fail(f"Could not load file {filename} as {from_type}.", 1)
     except Exception as error:
-        print(f"Could not load file {filename} as {from_type}: {error}")
-        return 1
+        return _fail(f"Could not load file {filename} as {from_type}: {error}", 1)
 
     if show_stats:
         print("Source loaded")
@@ -53,28 +73,26 @@ def convert(filename, from_type, to_type, to_filename, show_stats):
     if to_type is None:
         to_type = infer_file_type(to_filename)
         if to_type is None:
-            print(
+            return _fail(
                 f"Could not infer the format of {to_filename} from its extension. "
-                "Use --to-type to specify it explicitly."
+                "Use --to-type to specify it explicitly.",
+                2,
             )
-            return 2
 
     # Verificar a permissão de gravação do diretório de saída
     output_dir = os.path.dirname(to_filename) or "."
     if not os.access(output_dir, os.W_OK):
-        print(f"The output path {to_filename} cannot be written.")
-        return 3
+        return _fail(f"The output path {to_filename} cannot be written.", 3)
 
     # Escrever DataFrame para o arquivo de saída
     try:
-        save_function(df, to_type, to_filename)
+        save_file(df, to_type, to_filename)
     except Exception as error:
-        print(f"Could not save file {to_filename} as {to_type}: {error}")
-        return 1
+        return _fail(f"Could not save file {to_filename} as {to_type}: {error}", 1)
 
     if show_stats:
         df2 = None
-        df2 = read_function[to_type](to_filename)
+        df2 = read_file(to_type, to_filename)
         print("Target saved")
         print(f"  - (rows, columns) = {df2.shape}")
 

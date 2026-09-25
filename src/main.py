@@ -8,6 +8,7 @@ from typing_extensions import Annotated
 try:
     from clean import clean as file_clean
     from convert import convert as file_convert
+    from execution_log import logged
     from info import info as file_info
     from profiler import profile as file_profile
     from structures import (
@@ -22,6 +23,7 @@ try:
 except ImportError:
     from .clean import clean as file_clean
     from .convert import convert as file_convert
+    from .execution_log import logged
     from .info import info as file_info
     from .profiler import profile as file_profile
     from .structures import (
@@ -40,6 +42,20 @@ FormatOption = Annotated[
     OutputFormat,
     typer.Option("--format", case_sensitive=False, help="Formato da saída"),
 ]
+SepOption = Annotated[
+    Optional[str],
+    typer.Option(
+        "--sep",
+        help="Delimitador do CSV de entrada (ex.: ';' ou '\\t'). Se omitido, detecta.",
+    ),
+]
+EncodingOption = Annotated[
+    Optional[str],
+    typer.Option(
+        "--encoding",
+        help="Encoding do CSV de entrada (ex.: cp1252, latin-1). Se omitido, detecta.",
+    ),
+]
 
 dataset_app = typer.Typer()
 app.add_typer(dataset_app, name="dataset")
@@ -52,6 +68,7 @@ app.add_typer(utils_app, name="utils")
 # Convert commands
 # ----------------------------------------------------------------
 @app.command("convert")
+@logged("convert")
 def convert(
     filename: str,
     to_filename: Optional[str] = typer.Argument(None),
@@ -60,8 +77,12 @@ def convert(
     ] = None,
     to_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
     show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
+    sep: SepOption = None,
+    encoding: EncodingOption = None,
 ):
-    result = file_convert(filename, from_type, to_type, to_filename, show_stats)
+    result = file_convert(
+        filename, from_type, to_type, to_filename, show_stats, sep, encoding
+    )
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -70,8 +91,14 @@ def convert(
 # Info commands
 # ----------------------------------------------------------------
 @app.command("info")
-def info(filename: str, output_format: FormatOption = OutputFormat.TEXT):
-    result = file_info(filename, output_format)
+@logged("info")
+def info(
+    filename: str,
+    output_format: FormatOption = OutputFormat.TEXT,
+    sep: SepOption = None,
+    encoding: EncodingOption = None,
+):
+    result = file_info(filename, output_format, sep, encoding)
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -80,6 +107,7 @@ def info(filename: str, output_format: FormatOption = OutputFormat.TEXT):
 # Profile commands
 # ----------------------------------------------------------------
 @app.command("profile")
+@logged("profile")
 def profile(
     filename: str,
     key: Annotated[
@@ -87,8 +115,10 @@ def profile(
         typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
     ] = None,
     output_format: FormatOption = OutputFormat.TEXT,
+    sep: SepOption = None,
+    encoding: EncodingOption = None,
 ):
-    result = file_profile(filename, key, output_format)
+    result = file_profile(filename, key, output_format, sep, encoding)
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -97,6 +127,7 @@ def profile(
 # Clean commands
 # ----------------------------------------------------------------
 @app.command("clean")
+@logged("clean")
 def clean(
     filename: str,
     trim: Annotated[bool, typer.Option("--trim")] = False,
@@ -148,6 +179,8 @@ def clean(
     ] = None,
     output: Annotated[Optional[str], typer.Option("--output")] = None,
     output_format: FormatOption = OutputFormat.TEXT,
+    sep: SepOption = None,
+    encoding: EncodingOption = None,
 ):
     result = file_clean(
         filename,
@@ -168,6 +201,8 @@ def clean(
         remove_columns,
         output,
         output_format,
+        sep,
+        encoding,
     )
     if result > 0:
         raise typer.Exit(code=result)
@@ -177,6 +212,7 @@ def clean(
 # Excel commands
 # ----------------------------------------------------------------
 @app.command("excel")
+@logged("excel")
 def excel(
     filename: str,
     workbooks: List[str] = None,
@@ -195,6 +231,7 @@ def excel(
 # Dataset commands
 # ----------------------------------------------------------------
 @dataset_app.command("translate")
+@logged("dataset translate")
 def dataset_translate(
     filename: str,
     to: Annotated[Language, typer.Option()] = Language.PORTUGUES,
@@ -210,6 +247,7 @@ def dataset_translate(
 
 
 @dataset_app.command("explain")
+@logged("dataset explain")
 def dataset_explain(
     filename: str,
     only_columns: Annotated[bool, typer.Option("--only-columns")] = False,
@@ -223,6 +261,7 @@ def dataset_explain(
 
 
 @dataset_app.command("transform")
+@logged("dataset transform")
 def dataset_transform(
     filename: str,
     columns: List[str] = None,
@@ -250,6 +289,7 @@ def dataset_transform(
 
 
 @dataset_app.command("decode")
+@logged("dataset decode")
 def dataset_decode(
     filename: str,
     to: Annotated[EncodingType, typer.Option(case_sensitive=False)] = EncodingType.UTF8,
@@ -272,6 +312,7 @@ def dataset_decode(
 # Utils commands
 # ----------------------------------------------------------------
 @utils_app.command("encode")
+@logged("utils encode", log_args=False)
 def utils_encode2(from_value: str):
     result = utils_encode(from_value)
     if result:
@@ -281,6 +322,7 @@ def utils_encode2(from_value: str):
 
 
 @utils_app.command("decode")
+@logged("utils decode", log_args=False)
 def utils_decode2(from_value: str):
     result = utils_decode(from_value)
     if result:

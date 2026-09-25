@@ -9,6 +9,8 @@ import polars as pl
 import pytest
 from typer.testing import CliRunner
 
+from . import execution_log
+from . import main as main_module
 from .main import app
 
 
@@ -328,7 +330,7 @@ class TestCleanCommand:
                 f.write("A,B\n1,x\n2,y\n3,z\n")
 
             runner.invoke(app, ["clean", "dados.csv"])
-            assert os.listdir(tmp_dir) == ["dados.csv"]
+            assert sorted(os.listdir(tmp_dir)) == ["dados.csv", "logs"]
 
     def test_clean_detects_invalid_emails(self, runner):
         with isolated_filesystem():
@@ -487,7 +489,7 @@ class TestCleanStringOperators:
             result = runner.invoke(app, ["clean", "dados.csv", "--trim"])
             assert result.exit_code == 0
             assert "Ana" in result.stdout
-            assert os.listdir(tmp_dir) == ["dados.csv"]
+            assert sorted(os.listdir(tmp_dir)) == ["dados.csv", "logs"]
 
     def test_clean_output_unwritable_directory(self, runner):
         with isolated_filesystem():
@@ -1329,6 +1331,246 @@ class TestJsonOutput:
 
             result = runner.invoke(app, ["info", "dados.csv", "--format", "xml"])
             assert result.exit_code != 0
+
+
+def _write_bytes(filename, text, encoding="utf-8"):
+    with open(filename, "wb") as f:
+        f.write(text.encode(encoding))
+
+
+def _read_log():
+    with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
+        return f.read()
+
+
+class TestCsvDetection:
+    @pytest.mark.parametrize(
+        "command, expected",
+        [
+            (["info", "dados.csv"], "Colunas: 3"),
+            (["profile", "dados.csv"], 'Coluna "cidade" (categórica)'),
+            (["clean", "dados.csv"], "Colunas: 3"),
+            (["convert", "dados.csv", "saida.csv"], ""),
+        ],
+    )
+    def test_semicolon_csv_in_every_command(self, runner, command, expected):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome;cidade;valor\nAna;POA;1,5\nBia;SP;2,5\n")
+
+            result = runner.invoke(app, command)
+            assert result.exit_code == 0
+            assert expected in result.stdout
+            if command[0] == "convert":
+                with open("saida.csv", encoding="utf8") as f:
+                    assert (
+                        f.read() == 'nome,cidade,valor\nAna,POA,"1,5"\nBia,SP,"2,5"\n'
+                    )
+
+    @pytest.mark.parametrize("delimiter", [",", ";", "\t", "|"])
+    def test_detects_delimiters(self, runner, delimiter):
+        with isolated_filesystem():
+            _write_bytes(
+                "dados.csv", delimiter.join("abc") + "\n" + delimiter.join("123") + "\n"
+            )
+
+            result = runner.invoke(app, ["convert", "dados.csv", "saida.parquet"])
+            assert result.exit_code == 0
+            assert pl.read_parquet("saida.parquet").columns == ["a", "b", "c"]
+
+    def test_cp1252_with_accents(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome;cidade\nJoão;São Paulo\n", "cp1252")
+
+            result = runner.invoke(app, ["convert", "dados.csv", "saida.csv"])
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,cidade\nJoão,São Paulo\n"
+
+    def test_utf8_bom(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "﻿nome,cidade\nAna,POA\n")
+
+            result = runner.invoke(app, ["convert", "dados.csv", "saida.parquet"])
+            assert result.exit_code == 0
+            assert pl.read_parquet("saida.parquet").columns == ["nome", "cidade"]
+
+    def test_sep_and_encoding_override_detection(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome;cidade\nJoão;São Paulo\n", "cp1252")
+
+            result = runner.invoke(
+                app,
+                [
+                    "convert",
+                    "dados.csv",
+                    "saida.parquet",
+                    "--sep",
+                    ",",
+                    "--encoding",
+                    "latin-1",
+                ],
+            )
+            assert result.exit_code == 0
+            df = pl.read_parquet("saida.parquet")
+            assert df.columns == ["nome;cidade"]
+            assert df.row(0) == ("João;São Paulo",)
+
+    def test_tab_written_as_backslash_t(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "a\tb\n1\t2\n")
+
+            result = runner.invoke(
+                app, ["convert", "dados.csv", "saida.parquet", "--sep", "\\t"]
+            )
+            assert result.exit_code == 0
+            assert pl.read_parquet("saida.parquet").columns == ["a", "b"]
+
+    @pytest.mark.parametrize(
+        "filename, options, message",
+        [
+            ("dados.csv", ["--sep", ";;"], "Invalid --sep"),
+            ("dados.csv", ["--encoding", "naoexiste"], "Unknown --encoding"),
+            ("dados.json", ["--sep", ";"], "only apply to CSV"),
+            ("dados.json", ["--encoding", "cp1252"], "only apply to CSV"),
+        ],
+    )
+    def test_invalid_options(self, runner, filename, options, message):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "a,b\n1,2\n")
+            _write_bytes("dados.json", '[{"a": 1}]')
+
+            result = runner.invoke(
+                app, ["convert", filename, "saida.parquet", *options]
+            )
+            assert result.exit_code == 2
+            assert message in result.stdout
+            assert not os.path.exists("saida.parquet")
+
+    def test_explicit_encoding_that_does_not_decode(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome\nJoão\n", "cp1252")
+
+            result = runner.invoke(app, ["info", "dados.csv", "--encoding", "utf-8"])
+            assert result.exit_code == 1
+            assert "Could not load file" in result.stdout
+
+
+class TestExecutionLog:
+    def test_start_and_end_share_run_id(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome\nAna\n")
+
+            result = runner.invoke(app, ["info", "dados.csv"])
+            assert result.exit_code == 0
+            lines = _read_log().splitlines()
+            assert "info: início — args: filename=dados.csv" in lines[0]
+            assert "info: fim — exit code 0" in lines[-1]
+            run_ids = {line.split("[")[1].split("]")[0] for line in lines}
+            assert len(run_ids) == 1
+
+    def test_logs_csv_detection(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome;cidade\nJoão;São Paulo\n", "cp1252")
+
+            runner.invoke(app, ["info", "dados.csv"])
+            runner.invoke(
+                app, ["info", "dados.csv", "--sep", ";", "--encoding", "cp1252"]
+            )
+            log = _read_log()
+            assert "encoding detectado: cp1252 (arquivo não é UTF-8 válido)" in log
+            assert "delimitador detectado: ';'" in log
+            assert "encoding informado: cp1252" in log
+            assert "delimitador informado: ';'" in log
+            assert "lido — 1 linhas, 2 colunas" in log
+
+    def test_logs_clean_operations_writes_and_errors(self, runner):
+        with isolated_filesystem():
+            _write_bytes(
+                "dados.csv",
+                "nome,idade\n" + "".join(f"P{i},{i}\n" for i in range(9)) + "Ana,N/D\n",
+            )
+
+            runner.invoke(
+                app,
+                ["clean", "dados.csv", "--fix-types", "--output", "saida.parquet"],
+            )
+            runner.invoke(app, ["clean", "dados.csv", "--drop-null", "--columns", "x"])
+            log = _read_log()
+            assert "INFO    [" in log
+            assert '--fix-types: "idade" convertida para int' in log
+            assert "WARNING [" in log
+            assert '--fix-types: "idade" 1 valores não convertidos' in log
+            assert "gravado saida.parquet (parquet) — 10 linhas, 2 colunas" in log
+            assert "ERROR   [" in log
+            assert "Unknown column(s) in --columns: x" in log
+            assert "fim — exit code 2" in log
+
+    def test_no_cell_values_in_log(self, runner):
+        with isolated_filesystem():
+            _write_bytes(
+                "dados.csv",
+                "nome,nascimento,idade\n"
+                + "".join(f"Pessoa{i},0{i}/01/1990,{i}\n" for i in range(1, 10))
+                + "Fulano,ontem,N/D\n",
+            )
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-dates",
+                    "--fix-types",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "ontem" in result.stdout
+            log = _read_log()
+            for value in ("ontem", "N/D", "Fulano", "Pessoa1", "1990"):
+                assert value not in log
+
+    def test_unexpected_error_is_logged_with_traceback(self, runner, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("falha inesperada")
+
+        monkeypatch.setattr(main_module, "file_info", boom)
+        with isolated_filesystem():
+            result = runner.invoke(app, ["info", "dados.csv"])
+            assert result.exit_code == 1
+            log = _read_log()
+            assert "ERROR   [" in log
+            assert "erro inesperado" in log
+            assert "Traceback" in log
+            assert "RuntimeError: falha inesperada" in log
+            assert "fim — exit code 1" in log
+
+    def test_rotation(self, runner, monkeypatch):
+        monkeypatch.setattr(execution_log, "MAX_BYTES", 300)
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome\nAna\n")
+
+            for _ in range(20):
+                runner.invoke(app, ["info", "dados.csv"])
+            assert sorted(os.listdir("logs")) == [
+                "datatool.log",
+                "datatool.log.1",
+                "datatool.log.2",
+                "datatool.log.3",
+            ]
+
+    def test_command_works_when_log_cannot_be_written(self, runner):
+        with isolated_filesystem():
+            _write_bytes("dados.csv", "nome\nAna\n")
+            expected = runner.invoke(app, ["info", "dados.csv"])
+            shutil.rmtree("logs")
+            _write_bytes("logs", "não é um diretório")
+
+            result = runner.invoke(app, ["info", "dados.csv"])
+            assert result.exit_code == expected.exit_code == 0
+            assert result.stdout == expected.stdout
+            assert result.stderr == ""
 
 
 class TestUtilsEncodeCommand:

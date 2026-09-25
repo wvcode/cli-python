@@ -5,8 +5,10 @@ import math
 import os
 
 try:
+    from execution_log import log
     from structures import OutputFormat
 except ImportError:
+    from .execution_log import log
     from .structures import OutputFormat
 
 SCHEMA_VERSION = 1
@@ -37,6 +39,7 @@ def print_json(command, **fields):
 
 
 def fail(output_format, command, message, exit_code):
+    log.error(message)
     if output_format == OutputFormat.JSON:
         print_json(
             command,

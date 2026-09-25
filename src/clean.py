@@ -7,6 +7,7 @@ from datetime import datetime
 import polars as pl
 
 try:
+    from execution_log import log
     from quality import (
         _DATE_MATCH_RATIO,
         _NUMERIC_MATCH_RATIO,
@@ -18,11 +19,13 @@ try:
     from reporting import fail, file_summary, print_json
     from structures import (
         OutputFormat,
+        csv_options_error,
         infer_file_type,
-        read_function,
-        save_function,
+        read_file,
+        save_file,
     )
 except ImportError:
+    from .execution_log import log
     from .quality import (
         _DATE_MATCH_RATIO,
         _NUMERIC_MATCH_RATIO,
@@ -34,9 +37,10 @@ except ImportError:
     from .reporting import fail, file_summary, print_json
     from .structures import (
         OutputFormat,
+        csv_options_error,
         infer_file_type,
-        read_function,
-        save_function,
+        read_file,
+        save_file,
     )
 
 _YEAR_FIRST_FORMATS = [
@@ -465,8 +469,59 @@ def _print_report(report):
         print(f"{format_int_ptbr(report['rows_removed'])} linhas removidas")
 
 
+def _log_report(report):
+    # Só metadados: os exemplos de valores (unrecognized/failed_examples) ficam fora.
+    operation = report["operation"]
+    flag = "--" + operation.replace("_", "-")
+    if operation == "remove_columns":
+        log.info(
+            "%s: %s colunas removidas (%s)",
+            flag,
+            len(report["columns"]),
+            ", ".join(report["columns"]),
+        )
+    elif operation == "rename_columns":
+        log.info(
+            "%s: %s colunas renomeadas (%s)",
+            flag,
+            len(report["mapping"]),
+            ", ".join(f"{old} → {new}" for old, new in report["mapping"].items()),
+        )
+    elif operation in ("normalize_dates", "fix_types"):
+        if not report["columns"]:
+            log.info("%s: nenhuma coluna encontrada", flag)
+        for column_report in report["columns"]:
+            column = column_report["column"]
+            if operation == "normalize_dates":
+                log.info(
+                    '%s: "%s" %s datas normalizadas',
+                    flag,
+                    column,
+                    column_report["normalized"],
+                )
+                failed_count = column_report["unrecognized_count"]
+                failed_message = "valores não reconhecidos como data"
+            else:
+                log.info(
+                    '%s: "%s" convertida para %s', flag, column, column_report["type"]
+                )
+                failed_count = column_report["failed_count"]
+                failed_message = "valores não convertidos (viraram nulo)"
+            if failed_count:
+                log.warning(
+                    '%s: "%s" %s %s', flag, column, failed_count, failed_message
+                )
+    elif operation == "fill_null":
+        log.info("%s: %s células preenchidas", flag, report["cells_filled"])
+    elif operation in ("drop_null", "remove_duplicates"):
+        log.info("%s: %s linhas removidas", flag, report["rows_removed"])
+    else:
+        log.info("%s aplicado", flag)
+
+
 def _record(reports, report, output_format):
     reports.append(report)
+    _log_report(report)
     if output_format == OutputFormat.TEXT:
         _print_report(report)
 
@@ -479,7 +534,7 @@ def _write_output(df, output, output_type, output_format):
         )
 
     try:
-        save_function(df, output_type, output)
+        save_file(df, output_type, output)
     except Exception as error:
         return fail(
             output_format,
@@ -510,6 +565,8 @@ def clean(
     remove_columns=None,
     output=None,
     output_format=OutputFormat.TEXT,
+    sep=None,
+    encoding=None,
 ):
     is_json = output_format == OutputFormat.JSON
     has_operations = any(
@@ -555,8 +612,12 @@ def clean(
             2,
         )
 
+    options_error = csv_options_error(file_type, sep, encoding)
+    if options_error:
+        return fail(output_format, "clean", options_error, 2)
+
     try:
-        df = read_function[file_type](filename)
+        df = read_file(file_type, filename, sep, encoding)
     except Exception as error:
         return fail(
             output_format,
@@ -569,6 +630,11 @@ def clean(
 
     if not has_operations:
         findings = analyze_clean(df)
+        log.info(
+            "diagnóstico — %s problemas (%s)",
+            len(findings),
+            ", ".join(sorted({finding.category for finding in findings})) or "nenhum",
+        )
         if is_json:
             print_json(
                 "clean",

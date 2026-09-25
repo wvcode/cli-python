@@ -47,12 +47,13 @@ A saída no terminal não muda: o que foi detectado automaticamente vai só para
 - Uma linha por evento: data/hora, nível, identificador da execução, comando e mensagem. O identificador (curto, gerado por execução) permite separar execuções simultâneas ou seguidas:
 
 ```text
-2026-09-25 14:03:12,345 INFO  [a1b2c3] info: início — args: vendas.csv
-2026-09-25 14:03:12,351 INFO  [a1b2c3] info: lendo vendas.csv (csv)
-2026-09-25 14:03:12,352 INFO  [a1b2c3] info: delimitador detectado: ";"
-2026-09-25 14:03:12,352 INFO  [a1b2c3] info: encoding detectado: cp1252 (arquivo não é UTF-8 válido)
-2026-09-25 14:03:12,410 INFO  [a1b2c3] info: lido — 1.204 linhas, 8 colunas
-2026-09-25 14:03:12,498 INFO  [a1b2c3] info: fim — exit code 0, 0,15 s
+2026-09-25 14:03:12,345 INFO    [a1b2c3] info: início — args: filename=vendas.csv, output_format=text
+2026-09-25 14:03:12,351 INFO    [a1b2c3] info: lendo vendas.csv (csv)
+2026-09-25 14:03:12,352 INFO    [a1b2c3] info: encoding detectado: cp1252 (arquivo não é UTF-8 válido)
+2026-09-25 14:03:12,352 INFO    [a1b2c3] info: delimitador detectado: ';'
+2026-09-25 14:03:12,410 INFO    [a1b2c3] info: lido — 1204 linhas, 8 colunas
+2026-09-25 14:03:12,411 INFO    [a1b2c3] info: diagnóstico — 2 problemas (nulls, types)
+2026-09-25 14:03:12,498 INFO    [a1b2c3] info: fim — exit code 0, 0,15 s
 ```
 
 **O que é registrado** — tudo o que o CLI faz, em todos os comandos (inclusive os ainda esqueleto, como `excel` e `dataset`, que registram ao menos início e fim):
@@ -74,24 +75,38 @@ A saída no terminal não muda: o que foi detectado automaticamente vai só para
 
 ## Critérios de aceite
 **Leitura de CSV**
-- [ ] CSV separado por `;` é lido com as colunas corretas em `convert`, `info`, `profile` e `clean`, sem nenhuma opção
-- [ ] Os delimitadores `,`, `;`, tab e `|` são detectados automaticamente
-- [ ] CSV em `cp1252` com acentos (`São Paulo`, `João`) é lido sem erro e com os caracteres corretos, sem nenhuma opção
-- [ ] CSV UTF-8 com BOM continua sendo lido sem o BOM no nome da primeira coluna
-- [ ] `--sep` e `--encoding` sobrescrevem a detecção
-- [ ] Valor inválido — `--sep` com mais de um caractere, `--encoding` com codec desconhecido — gera erro claro e exit code 2, sem gravar nada
-- [ ] `--sep`/`--encoding` com arquivo de entrada que não é CSV gera erro claro e exit code 2 (em vez de ser ignorado em silêncio)
-- [ ] Arquivo que não decodifica no encoding informado em `--encoding` gera erro claro e exit code 1, como as demais falhas de leitura
-- [ ] A saída no terminal (stdout) não muda por causa da detecção: CSVs que já funcionam hoje (`,` e UTF-8) produzem exatamente o mesmo resultado, e os testes existentes continuam passando sem alteração
+- [x] CSV separado por `;` é lido com as colunas corretas em `convert`, `info`, `profile` e `clean`, sem nenhuma opção
+- [x] Os delimitadores `,`, `;`, tab e `|` são detectados automaticamente
+- [x] CSV em `cp1252` com acentos (`São Paulo`, `João`) é lido sem erro e com os caracteres corretos, sem nenhuma opção
+- [x] CSV UTF-8 com BOM continua sendo lido sem o BOM no nome da primeira coluna
+- [x] `--sep` e `--encoding` sobrescrevem a detecção
+- [x] Valor inválido — `--sep` com mais de um caractere, `--encoding` com codec desconhecido — gera erro claro e exit code 2, sem gravar nada
+- [x] `--sep`/`--encoding` com arquivo de entrada que não é CSV gera erro claro e exit code 2 (em vez de ser ignorado em silêncio)
+- [x] Arquivo que não decodifica no encoding informado em `--encoding` gera erro claro e exit code 1, como as demais falhas de leitura
+- [x] A saída no terminal (stdout) não muda por causa da detecção: CSVs que já funcionam hoje (`,` e UTF-8) produzem exatamente o mesmo resultado, e os testes existentes continuam passando sem alteração
 
 **Log**
-- [ ] Toda execução de qualquer comando grava em `./logs/datatool.log`, criando `logs/` se necessário
-- [ ] Cada execução registra início (com argumentos) e fim (com exit code e duração), identificadas pelo mesmo id de execução
-- [ ] Delimitador e encoding usados em cada leitura de CSV aparecem no log, indicando se foram detectados ou informados
-- [ ] Leituras, gravações, operações do `clean` (com as contagens) e erros aparecem no log, nos níveis da tabela acima
-- [ ] Nenhum valor de célula aparece no log
-- [ ] O arquivo é rotacionado ao passar de 5 MB, mantendo até 3 arquivos antigos
-- [ ] Se o log não puder ser gravado, o comando executa normalmente, com o mesmo resultado e exit code
+- [x] Toda execução de qualquer comando grava em `./logs/datatool.log`, criando `logs/` se necessário
+- [x] Cada execução registra início (com argumentos) e fim (com exit code e duração), identificadas pelo mesmo id de execução
+- [x] Delimitador e encoding usados em cada leitura de CSV aparecem no log, indicando se foram detectados ou informados
+- [x] Leituras, gravações, operações do `clean` (com as contagens) e erros aparecem no log, nos níveis da tabela acima
+- [x] Nenhum valor de célula aparece no log
+- [x] O arquivo é rotacionado ao passar de 5 MB, mantendo até 3 arquivos antigos
+- [x] Se o log não puder ser gravado, o comando executa normalmente, com o mesmo resultado e exit code
+
+Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCsvDetection`, `TestExecutionLog`). A saída em texto de `convert`, `info`, `profile` e `clean` foi comparada com a versão anterior à spec (16 cenários, incluindo erros) e é idêntica. Dois testes existentes precisaram de ajuste, porque conferiam que o diretório tinha só `dados.csv` depois do `clean` e agora também existe `logs/`: passaram a esperar `["dados.csv", "logs"]`, o que mantém a intenção (nenhum arquivo de dados gravado). Desempenho: `info` num CSV de 200 mil linhas (10 MB) continua em ~0,15 s; em `cp1252`, ~0,16 s.
+
+## Nota de implementação
+- **Leitura:** `read_csv` em [src/structures/functions.py](../src/structures/functions.py) faz a detecção e é a entrada `FileType.CSV` do `read_function`. `read_file`/`save_file` envolvem leitura e gravação de qualquer formato e registram `lendo`/`lido`/`gravado` no log; `csv_options_error` valida `--sep`/`--encoding`.
+- **Validação de UTF-8:** feita com um decodificador incremental em blocos de 1 MB, sem carregar o arquivo inteiro na memória. Tentar ler com o polars e cair para `cp1252` em caso de erro foi descartado, porque qualquer outro erro de leitura (ex.: linhas com número de campos diferente) também dispararia o fallback.
+- **Delimitador:** o `csv.Sniffer` já desempata a favor de `,` quando mais de um candidato é consistente. A amostra de 64 KB é cortada na última quebra de linha, para não sniffar uma linha pela metade.
+- **Log:** [src/execution_log.py](../src/execution_log.py). O decorator `@logged(comando)`, aplicado a todos os comandos em [src/main.py](../src/main.py), abre o arquivo, registra início (só as opções com valor diferente do padrão), fim, exit code e duração, e fecha o arquivo ao terminar. Exceções inesperadas são registradas com traceback e relançadas.
+- **Um handler por execução:** o arquivo é aberto no diretório atual a cada comando e fechado no fim. Isso importa nos testes, em que várias execuções rodam no mesmo processo, cada uma num diretório temporário.
+- **Silêncio garantido:** o logger `datatool` tem `propagate=False` e um `NullHandler`, para o `logging` nunca imprimir no stderr ("last resort"), e o handler de arquivo ignora falhas de escrita (`handleError`).
+- **Erros:** registrados em `fail()` de [src/reporting.py](../src/reporting.py), que o `convert` também passou a usar (antes ele fazia `print` + `return` direto); as mensagens no terminal não mudaram.
+- **Operações do `clean`:** registradas em `_record`, a partir dos mesmos relatórios da [019](019-saida-json.md), mas sem os campos `unrecognized_examples`/`failed_examples`. Os valores não reconhecidos continuam aparecendo só no terminal.
+- **`utils encode`/`decode`:** registram início e fim com `args: (omitidos)`, porque o argumento é o próprio valor a codificar.
+- Números no log saem sem separador de milhar (`1204 linhas`), diferente do exemplo original desta spec.
 
 ## Fora de escopo
 - **Gravar** CSV com `;` ou em `cp1252`: a saída continua `,` e UTF-8. É uma opção natural para depois (`--output-sep`/`--output-encoding`), para quem precisa devolver o arquivo ao Excel.
@@ -101,7 +116,7 @@ A saída no terminal não muda: o que foi detectado automaticamente vai só para
 - Configurar o log (local, nível, desligar, `--verbose` para espelhar no terminal): o local e o formato são fixos nesta spec.
 - Reconciliar o comando-esqueleto `dataset decode` (ver [backlog](backlog-novas-features.md#reconciliar-comandos-esqueleto)).
 
-## Notas para implementação
+## Notas originais do desenho
 - **Leitura:** ponto único de mudança — um wrapper de leitura de CSV em [src/structures/functions.py](../src/structures/functions.py) que recebe `sep`/`encoding` opcionais, faz a detecção e registra no log o que foi usado. `pl.read_csv` aceita `separator=` e `encoding=`; para encodings diferentes de UTF-8 o polars decodifica em Python, o que é aceitável para o volume-alvo (~200 mil linhas, ver [002](002-info-diagnostico.md)). O fallback para `cp1252` implica ler o arquivo duas vezes quando ele não é UTF-8; o custo do sniffer é limitado à amostra de 64 KB.
 - **Log:** módulo `logging` da stdlib, configurado uma vez por execução (ex.: no callback do `typer.Typer` em [src/main.py](../src/main.py)), com um logger por módulo (`logging.getLogger(__name__)`). Nenhum handler de console: o terminal continua recebendo só os `print` que já existem. O id de execução pode ir num `logging.Filter` ou `LoggerAdapter`, para não precisar ser repassado a cada chamada.
 - Os módulos de comando (`convert`, `info`, `profiler`, `clean`) passam a registrar os eventos da tabela nos mesmos pontos onde hoje fazem `print`; as mensagens do terminal continuam como estão.

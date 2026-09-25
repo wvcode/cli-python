@@ -3,15 +3,27 @@
 import os
 
 try:
+    from execution_log import log
     from profiling import profile as compute_profile
     from quality import format_int_ptbr
     from reporting import fail, file_summary, print_json
-    from structures import OutputFormat, infer_file_type, read_function
+    from structures import (
+        OutputFormat,
+        csv_options_error,
+        infer_file_type,
+        read_file,
+    )
 except ImportError:
+    from .execution_log import log
     from .profiling import profile as compute_profile
     from .quality import format_int_ptbr
     from .reporting import fail, file_summary, print_json
-    from .structures import OutputFormat, infer_file_type, read_function
+    from .structures import (
+        OutputFormat,
+        csv_options_error,
+        infer_file_type,
+        read_file,
+    )
 
 
 def _format_number(value):
@@ -64,7 +76,7 @@ def _column_profile_to_dict(column_profile):
     }
 
 
-def profile(filename, key, output_format=OutputFormat.TEXT):
+def profile(filename, key, output_format=OutputFormat.TEXT, sep=None, encoding=None):
     # Verificar a existência e a validade do arquivo de entrada
     if not os.path.exists(filename):
         return fail(
@@ -91,8 +103,12 @@ def profile(filename, key, output_format=OutputFormat.TEXT):
             2,
         )
 
+    options_error = csv_options_error(file_type, sep, encoding)
+    if options_error:
+        return fail(output_format, "profile", options_error, 2)
+
     try:
-        df = read_function[file_type](filename)
+        df = read_file(file_type, filename, sep, encoding)
     except Exception as error:
         return fail(
             output_format,
@@ -115,6 +131,7 @@ def profile(filename, key, output_format=OutputFormat.TEXT):
             )
 
     result = compute_profile(df, key_columns=key_columns)
+    log.info("profiling — %s colunas", result["columns"])
 
     if output_format == OutputFormat.JSON:
         by_key = None

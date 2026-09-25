@@ -3,13 +3,25 @@
 import os
 
 try:
+    from execution_log import log
     from quality import analyze, finding_to_dict, format_int_ptbr
     from reporting import fail, file_summary, print_json
-    from structures import OutputFormat, infer_file_type, read_function
+    from structures import (
+        OutputFormat,
+        csv_options_error,
+        infer_file_type,
+        read_file,
+    )
 except ImportError:
+    from .execution_log import log
     from .quality import analyze, finding_to_dict, format_int_ptbr
     from .reporting import fail, file_summary, print_json
-    from .structures import OutputFormat, infer_file_type, read_function
+    from .structures import (
+        OutputFormat,
+        csv_options_error,
+        infer_file_type,
+        read_file,
+    )
 
 _SUGGESTIONS = [
     ("types", "Corrigir tipos", "--fix-types"),
@@ -29,7 +41,7 @@ def _format_size(num_bytes):
         size /= 1024
 
 
-def info(filename, output_format=OutputFormat.TEXT):
+def info(filename, output_format=OutputFormat.TEXT, sep=None, encoding=None):
     # Verificar a existência e a validade do arquivo de entrada
     if not os.path.exists(filename):
         return fail(
@@ -53,8 +65,12 @@ def info(filename, output_format=OutputFormat.TEXT):
             2,
         )
 
+    options_error = csv_options_error(file_type, sep, encoding)
+    if options_error:
+        return fail(output_format, "info", options_error, 2)
+
     try:
-        df = read_function[file_type](filename)
+        df = read_file(file_type, filename, sep, encoding)
     except Exception as error:
         return fail(
             output_format,
@@ -64,6 +80,11 @@ def info(filename, output_format=OutputFormat.TEXT):
         )
 
     findings = analyze(df)
+    log.info(
+        "diagnóstico — %s problemas (%s)",
+        len(findings),
+        ", ".join(sorted({finding.category for finding in findings})) or "nenhum",
+    )
     categories_found = {finding.category for finding in findings}
     suggestions = [
         (category, label, flag)

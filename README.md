@@ -6,7 +6,7 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`), saída em JSON (`--format json`) em `info`/`profile`/`clean`
+- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`), saída em JSON (`--format json`) em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`
 - **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
@@ -258,6 +258,37 @@ datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp --output v
 
 - Coluna inexistente, entrada sem `:` em `--rename-columns` ou renomeação que geraria nomes repetidos são erro claro, sem gravar nada
 - São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
+
+### CSV com `;` ou em `cp1252` (Excel em português)
+
+`convert`, `info`, `profile` e `clean` detectam sozinhos o delimitador (`,`, `;`, tab ou `|`) e o encoding (UTF-8, com ou sem BOM, ou `cp1252`) do CSV de entrada. Um CSV exportado pelo Excel em português funciona sem nenhuma opção. Para forçar:
+
+```bash
+datatool info vendas.csv --sep ";" --encoding latin-1
+datatool convert vendas.csv vendas.parquet --sep "\t"
+```
+
+- `--sep` aceita um caractere (ou `\t` para tab); `--encoding` aceita qualquer codec do Python (`cp1252`, `latin-1`, `utf-16`, ...)
+- Valem só para o arquivo de entrada e só para CSV; a saída CSV continua com `,` e UTF-8
+- Números no formato brasileiro (`1.234,56`) chegam como texto: use `datatool clean ... --fix-types --decimal-separator ,`
+
+### Log de execução
+
+Toda execução registra em `logs/datatool.log` (no diretório onde o comando foi rodado) o que foi feito: comando e opções, delimitador/encoding usados, arquivos lidos e gravados, operações do `clean` com as contagens, erros, exit code e duração. O terminal não muda.
+
+```text
+2026-09-25 15:40:46,811 INFO    [41227a] clean: início — args: filename=vendas.csv, fix_types=True, decimal_separator=,, output=limpo.csv, output_format=text
+2026-09-25 15:40:46,811 INFO    [41227a] clean: encoding detectado: cp1252 (arquivo não é UTF-8 válido)
+2026-09-25 15:40:46,812 INFO    [41227a] clean: delimitador detectado: ';'
+2026-09-25 15:40:46,814 INFO    [41227a] clean: --fix-types: "valor" convertida para float
+2026-09-25 15:40:46,815 INFO    [41227a] clean: gravado limpo.csv (csv) — 2 linhas, 2 colunas
+2026-09-25 15:40:46,815 INFO    [41227a] clean: fim — exit code 0, 0,00 s
+```
+
+- O log nunca contém valores das células (só caminhos, nomes de coluna, contagens e opções)
+- Rotação a cada 5 MB, mantendo até 3 arquivos antigos (`datatool.log.1` a `.3`)
+- Se o log não puder ser gravado (ex.: diretório somente leitura), o comando roda normalmente, sem log
+- `logs/` está no `.gitignore`
 
 ### Saída em JSON (`--format json`)
 
