@@ -104,6 +104,30 @@ def clean(
         Optional[str],
         typer.Option(help="Colunas alvo de --drop-null, separadas por vírgula"),
     ] = None,
+    normalize_dates: Annotated[bool, typer.Option("--normalize-dates")] = False,
+    date_columns: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Colunas alvo de --normalize-dates, separadas por vírgula. "
+            "Se omitido, detecta automaticamente."
+        ),
+    ] = None,
+    fix_types: Annotated[bool, typer.Option("--fix-types")] = False,
+    decimal_separator: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Separador decimal usado por --fix-types: ',' ou '.'. "
+            "Se omitido, detecta por coluna."
+        ),
+    ] = None,
+    rename_columns: Annotated[
+        Optional[str],
+        typer.Option(help="Colunas a renomear, ex.: antigo:novo,foo:bar"),
+    ] = None,
+    remove_columns: Annotated[
+        Optional[str],
+        typer.Option(help="Colunas a remover, separadas por vírgula"),
+    ] = None,
     output: Annotated[Optional[str], typer.Option("--output")] = None,
 ):
     result = file_clean(
@@ -117,6 +141,12 @@ def clean(
         fill_null,
         drop_null,
         columns,
+        normalize_dates,
+        date_columns,
+        fix_types,
+        decimal_separator,
+        rename_columns,
+        remove_columns,
         output,
     )
     if result > 0:

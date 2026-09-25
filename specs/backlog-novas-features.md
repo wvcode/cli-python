@@ -6,27 +6,27 @@ Propostas que **não estão cobertas** pelas specs 001–016. Cada item vem de u
 - **Código**: lacuna encontrada ao implementar as specs 001–008
 - **Mercado BR**: oportunidade específica para o público brasileiro, que é o posicionamento natural do produto (mensagens em pt-BR, formato monetário BR já previsto em 010)
 
-Os IDs usam o prefixo `F` para não colidir com a numeração das specs. Esforço: **P** (≤1 dia), **M** (2–4 dias), **G** (≥1 semana).
+Os IDs usam o prefixo `F` para não colidir com a numeração das specs. Esforço: **P** (≤1 dia), **M** (2–4 dias), **G** (≥1 semana). A coluna **Spec** indica os itens que já viraram spec (ainda não implementada, salvo indicação no [README das specs](README.md)).
 
 ## Resumo priorizado
 
-| ID | Feature | Fonte | Plano | Esforço | Prioridade |
-|----|---------|-------|-------|---------|------------|
-| F01 | Detecção de delimitador e encoding em CSV | Código, Mercado BR | Community | P | Alta |
-| F02 | Validação de CPF/CNPJ com dígito verificador | Mercado BR | Community | P | Alta |
-| F03 | Saída estruturada (`--format json`) em `info`/`profile`/`clean` | Código | Community | P | Alta |
-| F04 | Seleção de aba em Excel (`--sheet`) | Código | Community | P | Alta |
-| F05 | Quality gate para CI (`datatool check`) | Ideia | Pro | M | Alta |
-| F06 | Mascaramento de dados pessoais (LGPD) | Mercado BR | Pro | M | Alta |
-| F07 | `--dry-run` no `clean` | Código | Community | P | Média |
-| F08 | Comparação entre dois datasets (`datatool diff`) | Novo | Community | M | Média |
-| F09 | Validação de schema declarado | Ideia | Pro | M | Média |
-| F10 | Processamento em lote (glob) | Ideia | Pro | M | Média |
-| F11 | Amostragem e visualização (`head`/`sample`) | Novo | Community | P | Média |
-| F12 | Arquivos grandes via modo lazy/streaming | Ideia | Pro | G | Média |
-| F13 | Histórico de operações e reprodutibilidade | Ideia | Pro | M | Baixa |
-| F14 | Conectores (PostgreSQL, S3) | Ideia | Team | G | Baixa |
-| F15 | Unir arquivos (`concat`/`join`) | Novo | Community | M | Baixa |
+| ID | Feature | Fonte | Plano | Esforço | Prioridade | Spec |
+|----|---------|-------|-------|---------|------------|------|
+| F01 | Detecção de delimitador e encoding em CSV | Código, Mercado BR | Community | P | Alta | [017](017-csv-delimitador-encoding.md) |
+| F02 | Validação de CPF/CNPJ com dígito verificador | Mercado BR | Community | P | Alta | [018](018-cpf-cnpj-validacao.md) |
+| F03 | Saída estruturada (`--format json`) em `info`/`profile`/`clean` | Código | Community | P | Alta | [019](019-saida-json.md) |
+| F04 | Seleção de aba em Excel (`--sheet`) | Código | Community | P | Alta | — |
+| F05 | Quality gate para CI (`datatool check`) | Ideia | Pro | M | Alta | — |
+| F06 | Mascaramento de dados pessoais (LGPD) | Mercado BR | Pro | M | Alta | — |
+| F07 | `--dry-run` no `clean` | Código | Community | P | Média | — |
+| F08 | Comparação entre dois datasets (`datatool diff`) | Novo | Community | M | Média | — |
+| F09 | Validação de schema declarado | Ideia | Pro | M | Média | — |
+| F10 | Processamento em lote (glob) | Ideia | Pro | M | Média | — |
+| F11 | Amostragem e visualização (`head`/`sample`) | Novo | Community | P | Média | — |
+| F12 | Arquivos grandes via modo lazy/streaming | Ideia | Pro | G | Média | — |
+| F13 | Histórico de operações e reprodutibilidade | Ideia | Pro | M | Baixa | — |
+| F14 | Conectores (PostgreSQL, S3) | Ideia | Team | G | Baixa | — |
+| F15 | Unir arquivos (`concat`/`join`) | Novo | Community | M | Baixa | — |
 
 Há também uma pendência de **higiene** (não é feature, mas afeta o produto): ver [Reconciliar comandos-esqueleto](#reconciliar-comandos-esqueleto).
 
@@ -35,6 +35,8 @@ Há também uma pendência de **higiene** (não é feature, mas afeta o produto)
 ## Alta prioridade
 
 ### F01 — Detecção de delimitador e encoding em CSV
+
+> Detalhada na spec [017-csv-delimitador-encoding](017-csv-delimitador-encoding.md).
 
 **Problema.** Hoje `convert`, `info`, `profile` e `clean` leem CSV com `pl.read_csv` usando os padrões do polars: separador `,` e UTF-8. O Excel em português exporta CSV com `;` e, frequentemente, em `cp1252`/`latin-1`. Nesses casos o arquivo é lido como **uma única coluna** ou falha por encoding, e o usuário recebe um diagnóstico errado sem entender por quê. Para o público-alvo, esse é provavelmente o primeiro atrito.
 
@@ -57,6 +59,8 @@ datatool info vendas.csv --sep ";" --encoding latin-1   # override explícito
 
 ### F02 — Validação de CPF/CNPJ com dígito verificador
 
+> Detalhada na spec [018-cpf-cnpj-validacao](018-cpf-cnpj-validacao.md).
+
 **Problema.** A spec 005 detecta duplicidade de CPF, mas não valida se o CPF é **válido**. CPF/CNPJ com dígito verificador errado é um dos problemas de qualidade mais comuns em cadastros brasileiros, e nenhuma ferramenta genérica (pandas-profiling, great_expectations) faz isso nativamente.
 
 **Proposta.** Um novo detector no diagnóstico do `clean` (e no `info`), no mesmo padrão dos detectores de e-mail/telefone de [005](005-clean-detectar-problemas.md):
@@ -78,6 +82,8 @@ datatool clean clientes.csv --normalize-cpf     # 123.456.789-09 → 12345678909
 ---
 
 ### F03 — Saída estruturada (`--format json`)
+
+> Detalhada na spec [019-saida-json](019-saida-json.md).
 
 **Problema.** `info`, `profile` e `clean` imprimem texto para humanos. Para usar o datatool em scripts, notebooks ou CI, é preciso parsear esse texto, o que é frágil. Além disso, as specs de IA ([014](014-ai-explain.md), [015](015-ai-ask.md)) exigem "a saída estruturada do profiling" como entrada — isso ainda não existe como formato público.
 

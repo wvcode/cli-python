@@ -6,8 +6,8 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`)
-- **Ainda não implementado**: `clean --fix-types`/`--normalize-dates`/`--rename-columns`/`--remove-columns`, `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
+- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`)
+- **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
 
@@ -66,7 +66,7 @@ Mostra linhas, colunas e tamanho do arquivo, além de detectar automaticamente:
 - colunas com múltiplos formatos de data
 - colunas numéricas armazenadas como texto
 
-Para cada problema encontrado, sugere o comando `datatool clean` correspondente. Hoje `--remove-duplicates` e `--drop-null` já existem; `--fix-types` e `--normalize-dates` ainda não (veja [specs/README.md](specs/README.md)). Funciona para CSV, JSON, Excel e Parquet.
+Para cada problema encontrado, sugere o comando `datatool clean` correspondente. Todas as sugestões (`--fix-types`, `--remove-duplicates`, `--normalize-dates`, `--drop-null`) já estão implementadas. Funciona para CSV, JSON, Excel e Parquet.
 
 ```text
 Arquivo: clientes.csv
@@ -208,7 +208,56 @@ datatool clean clientes.csv --drop-null --columns email --output clientes_limpo.
 - `--fill-null coluna:valor` preenche só essa coluna, convertendo o valor para o tipo da coluna quando ela é numérica; é repetível (`--fill-null "N/A" --fill-null "idade:0"`)
 - `--drop-null` remove linhas com nulos em qualquer coluna por padrão, ou só nas colunas de `--columns coluna1,coluna2`
 
-As demais operações de correção (`--fix-types`, `--normalize-dates`, `--rename-columns`/`--remove-columns`) ainda não existem — acompanhe o status em [specs/README.md](specs/README.md).
+`--normalize-dates` converte datas em formatos variados para ISO 8601 (`yyyy-mm-dd`):
+
+```bash
+datatool clean clientes.csv --normalize-dates
+datatool clean clientes.csv --normalize-dates --date-columns data_nascimento,data_cadastro --output clientes_limpo.csv
+```
+
+- Sem `--date-columns`, detecta automaticamente as colunas de texto em que a maioria dos valores (≥ 60% de uma amostra) parece data
+- Formatos reconhecidos: `yyyy-mm-dd`, `yyyy/mm/dd`, `yyyy.mm.dd`, `yyyy-mm-ddThh:mm:ss` (a hora é descartada), `dd/mm/yyyy`, `dd-mm-yyyy`, `dd.mm.yyyy`, `dd/mm/yy`, `dd-mm-yy` e as variantes `mm/dd`
+- Datas ambíguas como `01/02/1990` são lidas como `dd/mm`; a coluna só é tratada como `mm/dd` quando tem valores que só fazem sentido assim (ex.: `12/31/1990`) e nenhum que só faça sentido como `dd/mm`
+- Anos com 2 dígitos seguem a regra do Python: `00`–`68` → 2000–2068, `69`–`99` → 1969–1999
+- Valores não reconhecidos são mantidos como estão e listados na saída:
+
+```text
+"data_nascimento": 6 datas normalizadas
+"data_nascimento": 1 valores não reconhecidos como data, mantidos sem alteração:
+  "20261301"
+```
+
+`--fix-types` converte para número as colunas numéricas armazenadas como texto, inclusive valores monetários em formato brasileiro:
+
+```bash
+datatool clean relatorio.csv --fix-types --output relatorio_limpo.parquet
+datatool clean relatorio.csv --fix-types --decimal-separator , --output relatorio_limpo.parquet
+```
+
+- Detecta automaticamente as colunas de texto em que ≥ 90% de uma amostra dos valores é numérica
+- Remove `R$` e espaços antes de converter
+- `--decimal-separator ,` ou `--decimal-separator .` define o separador decimal de todas as colunas; o de milhar é o outro caractere. Com `,`: `1.234,56` → `1234.56` e `1.500` → `1500`. Com `.`: `1,234.56` → `1234.56` e `1.500` → `1.5`
+- Sem `--decimal-separator`, decide por coluna: se algum valor tem vírgula ou `R$`, usa `,` como decimal; senão, `.`. Nesse modo, uma coluna só com valores como `1.500` é lida como `1.5` — informe `--decimal-separator ,` para ler como `1500`
+- A coluna vira `int` quando nenhum valor tem parte decimal, senão `float`
+- Colunas com zeros à esquerda (`01001000`, típico de CEP/CPF) são ignoradas, porque a conversão perderia os zeros
+- Valores que não puderam ser convertidos viram nulo e são listados na saída, sem interromper as demais colunas:
+
+```text
+"valor": convertida para float, 1 valores não convertidos (viraram nulo):
+  "a combinar"
+"idade": convertida para int, 1 valores não convertidos (viraram nulo):
+  "N/D"
+```
+
+`--rename-columns`/`--remove-columns` ajustam o schema:
+
+```bash
+datatool clean vendas.csv --rename-columns old_name:new_name,foo:bar --output vendas_limpo.csv
+datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp --output vendas_limpo.csv
+```
+
+- Coluna inexistente, entrada sem `:` em `--rename-columns` ou renomeação que geraria nomes repetidos são erro claro, sem gravar nada
+- São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
 
 ### Em desenvolvimento
 
