@@ -5,7 +5,9 @@ from collections import namedtuple
 
 import polars as pl
 
-Finding = namedtuple("Finding", ["category", "message", "column", "count"])
+Finding = namedtuple(
+    "Finding", ["category", "message", "column", "count", "examples"], defaults=((),)
+)
 
 # Quantidade de valores não nulos amostrados por coluna ao inferir formatos de
 # data ou números em texto. Evita percorrer colunas inteiras em arquivos
@@ -80,6 +82,15 @@ def _phone_shape(value):
         if pattern.match(value):
             return label
     return None
+
+
+def _count_numeric_values(series):
+    counts = series.drop_nulls().value_counts()
+    return sum(
+        row["count"]
+        for row in counts.iter_rows(named=True)
+        if _looks_numeric(row[series.name])
+    )
 
 
 def detect_nulls(df):
@@ -158,12 +169,13 @@ def detect_numeric_as_text(df, skip_columns=()):
 
         matched = sum(1 for value in sample if _looks_numeric(value))
         if matched / len(sample) >= _NUMERIC_MATCH_RATIO:
+            # A amostra só decide se a coluna é reportada; a contagem é exata.
             findings.append(
                 Finding(
                     "types",
                     f'"{column}" está armazenada como texto mas parece numérica',
                     column,
-                    matched,
+                    _count_numeric_values(df[column]),
                 )
             )
     return findings
@@ -298,9 +310,28 @@ def detect_case_inconsistency(df):
             if len(variants) > len(shown):
                 lines += f"\n  ... e mais {len(variants) - len(shown)} variações"
             findings.append(
-                Finding("case_inconsistency", lines, column, len(variants))
+                Finding(
+                    "case_inconsistency", lines, column, len(variants), tuple(shown)
+                )
             )
     return findings
+
+
+def finding_to_dict(finding):
+    message = finding.message
+    if finding.category == "case_inconsistency":
+        # A mensagem de texto desse detector é a própria lista de variantes.
+        message = f"{format_int_ptbr(finding.count)} variações de capitalização"
+
+    result = {
+        "category": finding.category,
+        "column": finding.column,
+        "count": finding.count,
+        "message": message,
+    }
+    if finding.examples:
+        result["examples"] = list(finding.examples)
+    return result
 
 
 def analyze(df):

@@ -6,7 +6,7 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`)
+- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`), saída em JSON (`--format json`) em `info`/`profile`/`clean`
 - **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
@@ -258,6 +258,37 @@ datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp --output v
 
 - Coluna inexistente, entrada sem `:` em `--rename-columns` ou renomeação que geraria nomes repetidos são erro claro, sem gravar nada
 - São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
+
+### Saída em JSON (`--format json`)
+
+`info`, `profile` e `clean` aceitam `--format json` (o padrão é `--format text`, a saída descrita acima). O stdout passa a ser um único documento JSON, para uso em scripts, notebooks e CI:
+
+```bash
+datatool info clientes.csv --format json | jq '.problems[] | select(.category == "nulls")'
+datatool profile clientes.csv --format json > perfil.json
+datatool clean clientes.csv --fix-types --remove-duplicates --output limpo.parquet --format json
+```
+
+```json
+{
+  "schema_version": 1,
+  "command": "info",
+  "status": "ok",
+  "file": {"path": "examples/clientes.csv", "format": "csv", "rows": 10, "columns": 6, "size_bytes": 711},
+  "problems": [
+    {"category": "nulls", "column": "email", "count": 3, "message": "3 valores nulos em \"email\""}
+  ],
+  "suggestions": [
+    {"category": "nulls", "label": "Tratar valores nulos", "command": "datatool clean examples/clientes.csv --drop-null"}
+  ]
+}
+```
+
+- Todo documento traz `schema_version`, `command` e `status`; `info` traz `problems`/`suggestions`, `profile` traz `duplicates`/`columns`, e o `clean` traz `problems` (diagnóstico) ou `operations`/`output` (com operações)
+- Números sem formatação pt-BR nem arredondamento; `NaN` vira `null`
+- Erros também saem em JSON (`"status": "error"`), com o mesmo exit code do modo texto
+- No `clean` com operações, `--output` é obrigatório: o JSON é só o relatório, os dados vão para o arquivo
+- O formato completo, campo a campo, está em [specs/019-saida-json.md](specs/019-saida-json.md)
 
 ### Em desenvolvimento
 

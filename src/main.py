@@ -10,7 +10,13 @@ try:
     from convert import convert as file_convert
     from info import info as file_info
     from profiler import profile as file_profile
-    from structures import EncodingType, FileType, Language, OnErrorType
+    from structures import (
+        EncodingType,
+        FileType,
+        Language,
+        OnErrorType,
+        OutputFormat,
+    )
     from utils import decode as utils_decode
     from utils import encode as utils_encode
 except ImportError:
@@ -18,11 +24,22 @@ except ImportError:
     from .convert import convert as file_convert
     from .info import info as file_info
     from .profiler import profile as file_profile
-    from .structures import EncodingType, FileType, Language, OnErrorType
+    from .structures import (
+        EncodingType,
+        FileType,
+        Language,
+        OnErrorType,
+        OutputFormat,
+    )
     from .utils import decode as utils_decode
     from .utils import encode as utils_encode
 
 app = typer.Typer()
+
+FormatOption = Annotated[
+    OutputFormat,
+    typer.Option("--format", case_sensitive=False, help="Formato da saída"),
+]
 
 dataset_app = typer.Typer()
 app.add_typer(dataset_app, name="dataset")
@@ -53,8 +70,8 @@ def convert(
 # Info commands
 # ----------------------------------------------------------------
 @app.command("info")
-def info(filename: str):
-    result = file_info(filename)
+def info(filename: str, output_format: FormatOption = OutputFormat.TEXT):
+    result = file_info(filename, output_format)
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -69,8 +86,9 @@ def profile(
         Optional[str],
         typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
     ] = None,
+    output_format: FormatOption = OutputFormat.TEXT,
 ):
-    result = file_profile(filename, key)
+    result = file_profile(filename, key, output_format)
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -129,6 +147,7 @@ def clean(
         typer.Option(help="Colunas a remover, separadas por vírgula"),
     ] = None,
     output: Annotated[Optional[str], typer.Option("--output")] = None,
+    output_format: FormatOption = OutputFormat.TEXT,
 ):
     result = file_clean(
         filename,
@@ -148,6 +167,7 @@ def clean(
         rename_columns,
         remove_columns,
         output,
+        output_format,
     )
     if result > 0:
         raise typer.Exit(code=result)

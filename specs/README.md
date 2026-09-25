@@ -22,7 +22,7 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 | 016 | [Licenciamento das funcionalidades Pro](016-licenciamento-pro.md) | Monetização | Não implementado | pelo menos uma feature Pro |
 | 017 | [Detectar delimitador e encoding de CSV, com log de execução](017-csv-delimitador-encoding.md) | Conversão + infra | Não implementado | 001 |
 | 018 | [Validar e normalizar CPF/CNPJ](018-cpf-cnpj-validacao.md) | Cleaning | Não implementado | 005, 010 |
-| 019 | [Saída estruturada em JSON](019-saida-json.md) | Diagnóstico/Profiling | Não implementado | 002, 003, 005 |
+| 019 | [Saída estruturada em JSON](019-saida-json.md) | Diagnóstico/Profiling | Implementado | 002, 003, 005 |
 
 ## MVP v0.1
 

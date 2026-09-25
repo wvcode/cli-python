@@ -149,10 +149,11 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
     {"operation": "rename_columns", "mapping": {"Valor": "valor"}},
     {"operation": "trim"},
     {"operation": "normalize_dates", "columns": [
-      {"column": "data_venda", "normalized": 312, "unrecognized_count": 2, "unrecognized_examples": ["ontem", "32/13/2020"]}
+      {"column": "data_venda", "normalized": 312, "unrecognized_count": 2, "unrecognized_distinct": 2,
+       "unrecognized_examples": ["32/13/2020", "ontem"]}
     ]},
     {"operation": "fix_types", "columns": [
-      {"column": "valor", "type": "float", "failed_count": 1, "failed_examples": ["a combinar"]}
+      {"column": "valor", "type": "float", "failed_count": 1, "failed_distinct": 1, "failed_examples": ["a combinar"]}
     ]},
     {"operation": "fill_null", "cells_filled": 14},
     {"operation": "drop_null", "rows_removed": 3},
@@ -167,8 +168,8 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 | `remove_columns` | `columns` (removidas) |
 | `rename_columns` | `mapping` (antigo → novo) |
 | `trim`, `lowercase`, `uppercase`, `normalize_case` | nenhum (o modo texto também não reporta contagem) |
-| `normalize_dates` | `columns`: `column`, `normalized`, `unrecognized_count`, `unrecognized_examples` (até 10); lista vazia se nenhuma coluna de data foi encontrada |
-| `fix_types` | `columns`: `column`, `type` (`int`/`float`), `failed_count`, `failed_examples` (até 10); lista vazia se nenhuma coluna foi encontrada |
+| `normalize_dates` | `columns`: `column`, `normalized`, `unrecognized_count` (linhas), `unrecognized_distinct` (valores distintos), `unrecognized_examples` (até 10 valores distintos, em ordem alfabética); lista vazia se nenhuma coluna de data foi encontrada |
+| `fix_types` | `columns`: `column`, `type` (`int`/`float`), `failed_count` (linhas), `failed_distinct` (valores distintos), `failed_examples` (até 10 valores distintos, em ordem alfabética); lista vazia se nenhuma coluna foi encontrada |
 | `fill_null` | `cells_filled` |
 | `drop_null` | `rows_removed` |
 | `remove_duplicates` | `rows_removed` |
@@ -176,16 +177,18 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 **`--output` é obrigatório** no modo operação com `--format json`. Sem ele, o modo texto imprime o DataFrame no stdout, o que não cabe num documento JSON de relatório. Omitir `--output` gera erro (em JSON), exit code 2, sem processar nada. `output` descreve o arquivo gravado.
 
 ## Critérios de aceite
-- [ ] `info`, `profile` e `clean` aceitam `--format text|json`; `text` é o padrão e produz exatamente a saída de hoje (testes existentes passam sem alteração)
-- [ ] Com `--format json`, o stdout é um único documento JSON válido (`json.loads` do stdout inteiro funciona), sem nenhum texto adicional
-- [ ] Todo documento tem `schema_version`, `command`, `status` e, quando o arquivo foi lido, `file`
-- [ ] `info` emite `problems` e `suggestions`; `profile` emite `duplicates` e `columns` com as estatísticas de [003](003-profile-estatistico.md); `clean` emite `problems` (diagnóstico) ou `operations` + `output` (operação), nos formatos acima
-- [ ] O `count` da categoria `types` é o total de valores numéricos da coluna inteira, não da amostra
-- [ ] Números sem formatação pt-BR nem arredondamento; `NaN`/`inf` como `null`; valores não JSON nativos (datas etc.) serializados sem erro
-- [ ] Erros (arquivo inexistente, formato não suportado, coluna desconhecida, etc.) saem como `{"status": "error", "error": {...}}`, com o mesmo exit code do modo texto
-- [ ] `clean` em modo operação com `--format json` e sem `--output` gera erro claro, exit code 2, nada gravado
-- [ ] `--format` com valor diferente de `text`/`json` é rejeitado pelo CLI com exit code != 0
-- [ ] O formato está documentado no README (exemplos de `info`, `profile` e `clean`) e nesta spec
+- [x] `info`, `profile` e `clean` aceitam `--format text|json`; `text` é o padrão e produz exatamente a saída de hoje (testes existentes passam sem alteração)
+- [x] Com `--format json`, o stdout é um único documento JSON válido (`json.loads` do stdout inteiro funciona), sem nenhum texto adicional
+- [x] Todo documento tem `schema_version`, `command`, `status` e, quando o arquivo foi lido, `file`
+- [x] `info` emite `problems` e `suggestions`; `profile` emite `duplicates` e `columns` com as estatísticas de [003](003-profile-estatistico.md); `clean` emite `problems` (diagnóstico) ou `operations` + `output` (operação), nos formatos acima
+- [x] O `count` da categoria `types` é o total de valores numéricos da coluna inteira, não da amostra
+- [x] Números sem formatação pt-BR nem arredondamento; `NaN`/`inf` como `null`; valores não JSON nativos (datas etc.) serializados sem erro
+- [x] Erros (arquivo inexistente, formato não suportado, coluna desconhecida, etc.) saem como `{"status": "error", "error": {...}}`, com o mesmo exit code do modo texto
+- [x] `clean` em modo operação com `--format json` e sem `--output` gera erro claro, exit code 2, nada gravado
+- [x] `--format` com valor diferente de `text`/`json` é rejeitado pelo CLI com exit code != 0
+- [x] O formato está documentado no README (exemplos de `info`, `profile` e `clean`) e nesta spec
+
+Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestJsonOutput`). A saída em texto foi comparada com a versão anterior à spec (`info`, `profile` e `clean` nos arquivos de [examples/](../examples/), com e sem operações, e nos caminhos de erro) e é idêntica.
 
 ## Fora de escopo
 - `--format json` no `convert` (o `--show-stats` é o único relatório dele) e nos comandos-esqueleto.
@@ -195,7 +198,13 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 - Contagem de células alteradas por `--trim`/`--lowercase`/`--uppercase`/`--normalize-case` (não existe nem no modo texto).
 - Exportar as linhas problemáticas de cada `problem`. É a extensão natural para quem precisa agir sobre os valores (ex.: CPFs inválidos de [018](018-cpf-cnpj-validacao.md)), mas envolve dados pessoais e merece uma decisão própria.
 
-## Notas para implementação
+## Nota de implementação
+- Serialização e erros em [src/reporting.py](../src/reporting.py): `print_json` monta o envelope (`schema_version`, `command`) e trata `NaN`/`inf` e datas; `fail` imprime a mensagem de erro em texto ou em JSON e devolve o exit code. `--format` é o enum `OutputFormat` de [src/structures/output_format.py](../src/structures/output_format.py).
+- No `clean`, cada `_apply_*` devolve `(df, relatório)`. Em modo texto, o relatório é impresso logo depois de cada operação, com as mesmas linhas de antes; em JSON, os relatórios são acumulados em `operations`.
+- `unrecognized_distinct`/`failed_distinct` foram acrescentados aos relatórios de `normalize_dates`/`fix_types` em relação ao desenho original: o modo texto precisa do número de valores distintos para imprimir `... e mais N valores`, e o campo também é útil no JSON.
+- Com `--format json` e operações sem `--output`, o erro é dado antes de ler o arquivo, sem processar nada.
+
+## Notas originais do desenho
 - **Separar cálculo de apresentação no `clean`.** Hoje cada `_apply_*` de [src/clean.py](../src/clean.py) faz `print` do próprio resumo. Eles passam a devolver `(df, relatório)`, em que o relatório é um dicionário no formato da tabela de `operations`. Um renderizador de texto produz exatamente as linhas de hoje, e um de JSON serializa a lista. [src/info.py](../src/info.py) e [src/profiler.py](../src/profiler.py) já calculam antes de imprimir; só precisam do ramo JSON.
 - **Mensagens de erro:** os pontos que hoje fazem `print(mensagem)` e `return código` passam a chamar um helper que imprime em texto ou em JSON, conforme o formato.
 - **`types`:** em `detect_numeric_as_text` ([src/quality.py](../src/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.

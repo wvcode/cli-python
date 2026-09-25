@@ -5,11 +5,13 @@ import os
 try:
     from profiling import profile as compute_profile
     from quality import format_int_ptbr
-    from structures import infer_file_type, read_function
+    from reporting import fail, file_summary, print_json
+    from structures import OutputFormat, infer_file_type, read_function
 except ImportError:
     from .profiling import profile as compute_profile
     from .quality import format_int_ptbr
-    from .structures import infer_file_type, read_function
+    from .reporting import fail, file_summary, print_json
+    from .structures import OutputFormat, infer_file_type, read_function
 
 
 def _format_number(value):
@@ -42,28 +44,62 @@ def _print_categorical_stats(stats):
             print(f"    {value}: {format_int_ptbr(count)} ({percent:.2f}%)")
 
 
-def profile(filename, key):
+def _column_profile_to_dict(column_profile):
+    stats = column_profile.stats
+    if column_profile.kind != "numeric":
+        stats = {
+            "cardinality": stats["cardinality"],
+            "top_values": [
+                {"value": value, "count": count, "percent": percent}
+                for value, count, percent in stats["top_values"]
+            ],
+        }
+    return {
+        "name": column_profile.name,
+        "dtype": column_profile.dtype,
+        "kind": column_profile.kind,
+        "null_count": column_profile.null_count,
+        "null_percent": column_profile.null_percent,
+        "stats": stats,
+    }
+
+
+def profile(filename, key, output_format=OutputFormat.TEXT):
     # Verificar a existência e a validade do arquivo de entrada
     if not os.path.exists(filename):
-        print(f"The file provided {filename} does not exist.")
-        return 2
+        return fail(
+            output_format,
+            "profile",
+            f"The file provided {filename} does not exist.",
+            2,
+        )
     if not os.path.isfile(filename):
-        print(f"The file provided {filename} is not a valid file.")
-        return 2
+        return fail(
+            output_format,
+            "profile",
+            f"The file provided {filename} is not a valid file.",
+            2,
+        )
 
     file_type = infer_file_type(filename)
     if file_type is None:
-        print(
+        return fail(
+            output_format,
+            "profile",
             f"Could not infer the format of {filename} from its extension. "
-            "Supported formats: csv, json, xlsx, parquet."
+            "Supported formats: csv, json, xlsx, parquet.",
+            2,
         )
-        return 2
 
     try:
         df = read_function[file_type](filename)
     except Exception as error:
-        print(f"Could not load file {filename} as {file_type}: {error}")
-        return 1
+        return fail(
+            output_format,
+            "profile",
+            f"Could not load file {filename} as {file_type}: {error}",
+            1,
+        )
 
     key_columns = [column.strip() for column in key.split(",")] if key else None
     if key_columns:
@@ -71,10 +107,33 @@ def profile(filename, key):
             column for column in key_columns if column not in df.columns
         ]
         if unknown_columns:
-            print(f"Unknown column(s) in --key: {', '.join(unknown_columns)}")
-            return 2
+            return fail(
+                output_format,
+                "profile",
+                f"Unknown column(s) in --key: {', '.join(unknown_columns)}",
+                2,
+            )
 
     result = compute_profile(df, key_columns=key_columns)
+
+    if output_format == OutputFormat.JSON:
+        by_key = None
+        if result["duplicates_by_key"] is not None:
+            by_key = {
+                "key_columns": result["key_columns"],
+                "count": result["duplicates_by_key"],
+            }
+        print_json(
+            "profile",
+            status="ok",
+            file=file_summary(filename, file_type, df),
+            duplicates={"total": result["duplicates_total"], "by_key": by_key},
+            columns=[
+                _column_profile_to_dict(column_profile)
+                for column_profile in result["column_profiles"]
+            ],
+        )
+        return 0
 
     print(f"Arquivo: {filename}")
     print(f"Linhas: {format_int_ptbr(result['rows'])}")

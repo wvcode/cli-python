@@ -12,18 +12,32 @@ try:
         _NUMERIC_MATCH_RATIO,
         _sample_values,
         analyze_clean,
+        finding_to_dict,
         format_int_ptbr,
     )
-    from structures import infer_file_type, read_function, save_function
+    from reporting import fail, file_summary, print_json
+    from structures import (
+        OutputFormat,
+        infer_file_type,
+        read_function,
+        save_function,
+    )
 except ImportError:
     from .quality import (
         _DATE_MATCH_RATIO,
         _NUMERIC_MATCH_RATIO,
         _sample_values,
         analyze_clean,
+        finding_to_dict,
         format_int_ptbr,
     )
-    from .structures import infer_file_type, read_function, save_function
+    from .reporting import fail, file_summary, print_json
+    from .structures import (
+        OutputFormat,
+        infer_file_type,
+        read_function,
+        save_function,
+    )
 
 _YEAR_FIRST_FORMATS = [
     "%Y-%m-%d",
@@ -53,13 +67,12 @@ class CleanError(Exception):
         self.code = code
 
 
-def _print_diagnostics(filename, df):
+def _print_diagnostics(filename, df, findings):
     print(f"Arquivo: {filename}")
     print(f"Linhas: {format_int_ptbr(df.height)}")
     print(f"Colunas: {format_int_ptbr(df.width)}")
     print()
 
-    findings = analyze_clean(df)
     if not findings:
         print("Nenhum problema encontrado.")
         return
@@ -97,8 +110,7 @@ def _apply_remove_duplicates(df, key_columns):
     before = df.height
     df = df.unique(subset=key_columns, keep="first", maintain_order=True)
     removed = before - df.height
-    print(f"{format_int_ptbr(removed)} linhas removidas")
-    return df
+    return df, {"operation": "remove_duplicates", "rows_removed": removed}
 
 
 def _parse_date(value, formats):
@@ -167,10 +179,8 @@ def _apply_normalize_dates(df, date_columns_spec):
             )
     else:
         date_columns = _detect_date_columns(df)
-        if not date_columns:
-            print("Nenhuma coluna de data encontrada")
-            return df
 
+    column_reports = []
     for column in date_columns:
         values = df[column].drop_nulls().unique().to_list()
         formats = _date_formats(values)
@@ -185,26 +195,26 @@ def _apply_normalize_dates(df, date_columns_spec):
                 mapping[value] = parsed.isoformat()
 
         normalized_count = df[column].is_in(list(mapping)).sum()
+        unrecognized_count = df[column].is_in(unrecognized).sum()
         df = df.with_columns(pl.col(column).replace(mapping))
-        print(f'"{column}": {format_int_ptbr(normalized_count)} datas normalizadas')
+        column_reports.append(
+            {
+                "column": column,
+                "normalized": normalized_count,
+                "unrecognized_count": unrecognized_count,
+                "unrecognized_distinct": len(unrecognized),
+                "unrecognized_examples": sorted(unrecognized)[:_UNRECOGNIZED_LIMIT],
+            }
+        )
 
-        if unrecognized:
-            unrecognized_count = df[column].is_in(unrecognized).sum()
-            print(
-                f'"{column}": {format_int_ptbr(unrecognized_count)} valores não '
-                "reconhecidos como data, mantidos sem alteração:"
-            )
-            _print_unrecognized(unrecognized)
-
-    return df
+    return df, {"operation": "normalize_dates", "columns": column_reports}
 
 
-def _print_unrecognized(values):
-    shown = sorted(values)[:_UNRECOGNIZED_LIMIT]
-    for value in shown:
+def _print_examples(examples, distinct_count):
+    for value in examples:
         print(f'  "{value}"')
-    if len(values) > len(shown):
-        print(f"  ... e mais {len(values) - len(shown)} valores")
+    if distinct_count > len(examples):
+        print(f"  ... e mais {distinct_count - len(examples)} valores")
 
 
 def _strip_number(value):
@@ -259,12 +269,8 @@ def _apply_fix_types(df, decimal_separator):
             f"Invalid --decimal-separator: {decimal_separator}. Use ',' or '.'", 2
         )
 
-    numeric_columns = _detect_numeric_text_columns(df, decimal_separator)
-    if not numeric_columns:
-        print("Nenhuma coluna numérica armazenada como texto encontrada")
-        return df
-
-    for column in numeric_columns:
+    column_reports = []
+    for column in _detect_numeric_text_columns(df, decimal_separator):
         values = df[column].drop_nulls().unique().to_list()
         separator = decimal_separator or _detect_decimal_separator(values)
 
@@ -288,17 +294,17 @@ def _apply_fix_types(df, decimal_separator):
             pl.col(column).replace_strict(mapping, default=None, return_dtype=dtype)
         )
 
-        if failed:
-            print(
-                f'"{column}": convertida para {type_name}, '
-                f"{format_int_ptbr(failed_count)} valores não convertidos "
-                "(viraram nulo):"
-            )
-            _print_unrecognized(failed)
-        else:
-            print(f'"{column}": convertida para {type_name}')
+        column_reports.append(
+            {
+                "column": column,
+                "type": type_name,
+                "failed_count": failed_count,
+                "failed_distinct": len(failed),
+                "failed_examples": sorted(failed)[:_UNRECOGNIZED_LIMIT],
+            }
+        )
 
-    return df
+    return df, {"operation": "fix_types", "columns": column_reports}
 
 
 def _cast_fill_value(value, dtype):
@@ -339,8 +345,7 @@ def _apply_fill_null(df, fill_null_specs):
                     df = df.with_columns(pl.col(column).fill_null(value))
                     total_filled += null_count
 
-    print(f"{format_int_ptbr(total_filled)} células preenchidas")
-    return df
+    return df, {"operation": "fill_null", "cells_filled": total_filled}
 
 
 def _apply_drop_null(df, columns_spec):
@@ -356,8 +361,7 @@ def _apply_drop_null(df, columns_spec):
     before = df.height
     df = df.drop_nulls(subset=subset)
     removed = before - df.height
-    print(f"{format_int_ptbr(removed)} linhas removidas")
-    return df
+    return df, {"operation": "drop_null", "rows_removed": removed}
 
 
 def _parse_column_list(spec):
@@ -374,8 +378,10 @@ def _apply_remove_columns(df, remove_columns_spec):
         )
 
     df = df.drop(to_remove)
-    print(f"{format_int_ptbr(len(set(to_remove)))} colunas removidas")
-    return df
+    return df, {
+        "operation": "remove_columns",
+        "columns": list(dict.fromkeys(to_remove)),
+    }
 
 
 def _apply_rename_columns(df, rename_columns_spec):
@@ -408,33 +414,79 @@ def _apply_rename_columns(df, rename_columns_spec):
         )
 
     df = df.rename(mapping)
-    print(f"{format_int_ptbr(len(mapping))} colunas renomeadas")
-    return df
+    return df, {"operation": "rename_columns", "mapping": mapping}
 
 
-def _write_or_print(df, output):
-    if output is None:
-        print(df)
-        return 0
+def _print_report(report):
+    operation = report["operation"]
+    if operation == "remove_columns":
+        print(f"{format_int_ptbr(len(report['columns']))} colunas removidas")
+    elif operation == "rename_columns":
+        print(f"{format_int_ptbr(len(report['mapping']))} colunas renomeadas")
+    elif operation == "normalize_dates":
+        if not report["columns"]:
+            print("Nenhuma coluna de data encontrada")
+        for column_report in report["columns"]:
+            column = column_report["column"]
+            print(
+                f'"{column}": {format_int_ptbr(column_report["normalized"])} '
+                "datas normalizadas"
+            )
+            if column_report["unrecognized_count"]:
+                print(
+                    f'"{column}": '
+                    f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
+                    "não reconhecidos como data, mantidos sem alteração:"
+                )
+                _print_examples(
+                    column_report["unrecognized_examples"],
+                    column_report["unrecognized_distinct"],
+                )
+    elif operation == "fix_types":
+        if not report["columns"]:
+            print("Nenhuma coluna numérica armazenada como texto encontrada")
+        for column_report in report["columns"]:
+            column = column_report["column"]
+            type_name = column_report["type"]
+            if column_report["failed_count"]:
+                print(
+                    f'"{column}": convertida para {type_name}, '
+                    f"{format_int_ptbr(column_report['failed_count'])} valores não "
+                    "convertidos (viraram nulo):"
+                )
+                _print_examples(
+                    column_report["failed_examples"], column_report["failed_distinct"]
+                )
+            else:
+                print(f'"{column}": convertida para {type_name}')
+    elif operation == "fill_null":
+        print(f"{format_int_ptbr(report['cells_filled'])} células preenchidas")
+    elif operation in ("drop_null", "remove_duplicates"):
+        print(f"{format_int_ptbr(report['rows_removed'])} linhas removidas")
 
-    output_type = infer_file_type(output)
-    if output_type is None:
-        print(
-            f"Could not infer the format of {output} from its extension. "
-            "Use a known extension (csv, json, parquet, ...)."
-        )
-        return 2
 
+def _record(reports, report, output_format):
+    reports.append(report)
+    if output_format == OutputFormat.TEXT:
+        _print_report(report)
+
+
+def _write_output(df, output, output_type, output_format):
     output_dir = os.path.dirname(output) or "."
     if not os.access(output_dir, os.W_OK):
-        print(f"The output path {output} cannot be written.")
-        return 3
+        return fail(
+            output_format, "clean", f"The output path {output} cannot be written.", 3
+        )
 
     try:
         save_function(df, output_type, output)
     except Exception as error:
-        print(f"Could not save file {output} as {output_type}: {error}")
-        return 1
+        return fail(
+            output_format,
+            "clean",
+            f"Could not save file {output} as {output_type}: {error}",
+            1,
+        )
 
     return 0
 
@@ -457,30 +509,10 @@ def clean(
     rename_columns=None,
     remove_columns=None,
     output=None,
+    output_format=OutputFormat.TEXT,
 ):
-    # Verificar a existência e a validade do arquivo de entrada
-    if not os.path.exists(filename):
-        print(f"The file provided {filename} does not exist.")
-        return 2
-    if not os.path.isfile(filename):
-        print(f"The file provided {filename} is not a valid file.")
-        return 2
-
-    file_type = infer_file_type(filename)
-    if file_type is None:
-        print(
-            f"Could not infer the format of {filename} from its extension. "
-            "Use --from-type to specify it explicitly."
-        )
-        return 2
-
-    try:
-        df = read_function[file_type](filename)
-    except Exception as error:
-        print(f"Could not load file {filename} as {file_type}: {error}")
-        return 1
-
-    if not any(
+    is_json = output_format == OutputFormat.JSON
+    has_operations = any(
         (
             trim,
             lowercase,
@@ -494,18 +526,71 @@ def clean(
             rename_columns,
             remove_columns,
         )
-    ):
-        _print_diagnostics(filename, df)
+    )
+
+    # No JSON, o stdout é só o relatório: o DataFrame precisa ir para um arquivo.
+    if is_json and has_operations and output is None:
+        return fail(output_format, "clean", "--format json requires --output", 2)
+
+    # Verificar a existência e a validade do arquivo de entrada
+    if not os.path.exists(filename):
+        return fail(
+            output_format, "clean", f"The file provided {filename} does not exist.", 2
+        )
+    if not os.path.isfile(filename):
+        return fail(
+            output_format,
+            "clean",
+            f"The file provided {filename} is not a valid file.",
+            2,
+        )
+
+    file_type = infer_file_type(filename)
+    if file_type is None:
+        return fail(
+            output_format,
+            "clean",
+            f"Could not infer the format of {filename} from its extension. "
+            "Use --from-type to specify it explicitly.",
+            2,
+        )
+
+    try:
+        df = read_function[file_type](filename)
+    except Exception as error:
+        return fail(
+            output_format,
+            "clean",
+            f"Could not load file {filename} as {file_type}: {error}",
+            1,
+        )
+
+    input_summary = file_summary(filename, file_type, df)
+
+    if not has_operations:
+        findings = analyze_clean(df)
+        if is_json:
+            print_json(
+                "clean",
+                status="ok",
+                file=input_summary,
+                problems=[finding_to_dict(finding) for finding in findings],
+            )
+        else:
+            _print_diagnostics(filename, df, findings)
         return 0
 
+    reports = []
     try:
         # Remoção/renomeação vêm primeiro: as demais opções (--key, --columns,
         # --date-columns, --fill-null coluna:valor) usam os nomes resultantes.
         if remove_columns:
-            df = _apply_remove_columns(df, remove_columns)
+            df, report = _apply_remove_columns(df, remove_columns)
+            _record(reports, report, output_format)
 
         if rename_columns:
-            df = _apply_rename_columns(df, rename_columns)
+            df, report = _apply_rename_columns(df, rename_columns)
+            _record(reports, report, output_format)
 
         key_columns = [column.strip() for column in key.split(",")] if key else None
         if key_columns:
@@ -513,27 +598,71 @@ def clean(
                 column for column in key_columns if column not in df.columns
             ]
             if unknown_columns:
-                print(f"Unknown column(s) in --key: {', '.join(unknown_columns)}")
-                return 2
+                raise CleanError(
+                    f"Unknown column(s) in --key: {', '.join(unknown_columns)}", 2
+                )
 
         df = _apply_string_operators(df, trim, lowercase, uppercase, normalize_case)
+        for operation, enabled in (
+            ("trim", trim),
+            ("lowercase", lowercase),
+            ("uppercase", uppercase),
+            ("normalize_case", normalize_case),
+        ):
+            if enabled:
+                _record(reports, {"operation": operation}, output_format)
 
         if normalize_dates:
-            df = _apply_normalize_dates(df, date_columns)
+            df, report = _apply_normalize_dates(df, date_columns)
+            _record(reports, report, output_format)
 
         if fix_types:
-            df = _apply_fix_types(df, decimal_separator)
+            df, report = _apply_fix_types(df, decimal_separator)
+            _record(reports, report, output_format)
 
         if fill_null:
-            df = _apply_fill_null(df, fill_null)
+            df, report = _apply_fill_null(df, fill_null)
+            _record(reports, report, output_format)
 
         if drop_null:
-            df = _apply_drop_null(df, columns)
+            df, report = _apply_drop_null(df, columns)
+            _record(reports, report, output_format)
 
         if remove_duplicates:
-            df = _apply_remove_duplicates(df, key_columns)
+            df, report = _apply_remove_duplicates(df, key_columns)
+            _record(reports, report, output_format)
     except CleanError as error:
-        print(error.message)
-        return error.code
+        return fail(output_format, "clean", error.message, error.code)
 
-    return _write_or_print(df, output)
+    if output is None:
+        print(df)
+        return 0
+
+    output_type = infer_file_type(output)
+    if output_type is None:
+        return fail(
+            output_format,
+            "clean",
+            f"Could not infer the format of {output} from its extension. "
+            "Use a known extension (csv, json, parquet, ...).",
+            2,
+        )
+
+    result = _write_output(df, output, output_type, output_format)
+    if result:
+        return result
+
+    if is_json:
+        print_json(
+            "clean",
+            status="ok",
+            file=input_summary,
+            operations=reports,
+            output={
+                "path": output,
+                "format": output_type.value,
+                "rows": df.height,
+                "columns": df.width,
+            },
+        )
+    return 0
