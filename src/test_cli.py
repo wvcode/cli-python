@@ -246,6 +246,16 @@ class TestProfileCommand:
             assert "Percentis: p25=" in result.stdout
             assert "Outliers (IQR): 1" in result.stdout
 
+    def test_profile_percentiles_use_linear_interpolation(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("idade\n" + "\n".join(str(v) for v in range(1, 10)) + "\n100\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv"])
+            assert result.exit_code == 0
+            assert "Mediana: 5.50" in result.stdout
+            assert "Percentis: p25=3.25  p50=5.50  p75=7.75" in result.stdout
+
     def test_profile_categorical_column_stats(self, runner):
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:

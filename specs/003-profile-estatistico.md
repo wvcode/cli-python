@@ -26,7 +26,8 @@ Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestProfileCommand
 ## Nota de implementação
 - "Colunas numéricas" = qualquer dtype numérico do polars (`dtype.is_numeric()`); as demais (texto, booleano, data) caem no ramo categórico.
 - Top-N usa N=5 e cobre ao mesmo tempo "top-N mais frequentes" e "distribuição das categorias" (percentual de cada uma sobre o total de valores não nulos) — não lista a distribuição completa para colunas de alta cardinalidade.
-- Outliers via IQR: `[Q1 - 1.5*IQR, Q3 + 1.5*IQR]`.
+- Percentis (p25/p50/p75) calculados com interpolação linear (`quantile(..., interpolation="linear")`), o mesmo padrão de pandas/numpy. Assim `p50` é sempre igual à mediana. Até a spec [019](019-saida-json.md) o cálculo usava o padrão do polars (`nearest`, que devolve um valor existente na coluna), e `p50` podia divergir da mediana.
+- Outliers via IQR: `[Q1 - 1.5*IQR, Q3 + 1.5*IQR]`, com Q1/Q3 = p25/p75 acima.
 - `--key` aceita uma ou mais colunas separadas por vírgula; se alguma coluna não existir, retorna erro com exit code != 0.
 
 ## Fora de escopo

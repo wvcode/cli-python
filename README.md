@@ -113,7 +113,7 @@ Linhas duplicadas (chave: cpf): 1
 Coluna "cpf" (numérica)
   Nulos: 0 (0.00%)
   Min: 11122233344.00  Max: 99900011122.00  Média: 52222222221.70  Mediana: 50011122232.50  Desvio padrão: 30544672345.70
-  Percentis: p25=22233344455.00  p50=55566677788.00  p75=77788899900.00
+  Percentis: p25=25011122232.75  p50=50011122232.50  p75=75011122149.75
   Outliers (IQR): 0
 
 Coluna "cidade" (categórica)

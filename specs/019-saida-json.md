@@ -87,12 +87,14 @@ Sem problemas, `problems` e `suggestions` são listas vazias.
 | `nulls` | info | coluna | valores nulos |
 | `duplicates` | info | `null` | linhas inteiras duplicadas |
 | `dates` | info | coluna | formatos de data distintos |
-| `types` | info | coluna | valores **da amostra** (até 2.000) que parecem numéricos |
+| `types` | info | coluna | valores não nulos da coluna inteira que parecem numéricos (ver abaixo) |
 | `invalid_emails` | clean | coluna | valores com e-mail inválido |
 | `phone_format_variance` | clean | coluna | formatos de telefone distintos |
 | `whitespace` | clean | coluna | valores com espaços nas bordas |
 | `key_duplicates` | clean | coluna | valores duplicados numa coluna que parece chave |
 | `case_inconsistency` | clean | coluna | variações de capitalização |
+
+**`types`**: hoje `detect_numeric_as_text` guarda em `count` quantos valores **da amostra** (até 2.000) parecem numéricos, um número que depende do tamanho do arquivo e não significa nada para quem consome. Nesta spec, `count` passa a ser o total da coluna inteira. A amostra continua sendo usada só para **decidir** se a coluna é reportada; a contagem é feita depois, sobre todos os valores não nulos. O modo texto não mostra esse número, então não muda.
 
 Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entram nessa tabela sem mudar `schema_version`.
 
@@ -122,14 +124,14 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
       "name": "cpf", "dtype": "Int64", "kind": "numeric",
       "null_count": 0, "null_percent": 0.0,
       "stats": {"min": 11122233344, "max": 99900011122, "mean": 52222222221.7, "median": 50011122232.5,
-                "std": 30544672345.701714, "p25": 22233344455.0, "p50": 55566677788.0, "p75": 77788899900.0,
+                "std": 30544672345.701714, "p25": 25011122232.75, "p50": 50011122232.5, "p75": 75011122149.75,
                 "outliers": 0}
     }
   ]
 }
 ```
 
-(Lista de colunas e `top_values` encurtadas; valores reais de [examples/clientes.csv](../examples/clientes.csv).) Com `--key cpf,email`: `"by_key": {"key_columns": ["cpf", "email"], "count": 0}`. `kind` é `numeric` ou `categorical`, como em [003](003-profile-estatistico.md); `dtype` é o nome do tipo polars.
+(Lista de colunas e `top_values` encurtadas; valores reais de [examples/clientes.csv](../examples/clientes.csv).) Percentis com interpolação linear, então `p50` é igual a `median` (ver nota em [003](003-profile-estatistico.md)). Com `--key cpf,email`: `"by_key": {"key_columns": ["cpf", "email"], "count": 0}`. `kind` é `numeric` ou `categorical`, como em [003](003-profile-estatistico.md); `dtype` é o nome do tipo polars.
 
 ## `clean --format json`
 **Modo diagnóstico** (sem flags de operação): mesmo envelope, com `problems` no formato do `info` (as categorias de [005](005-clean-detectar-problemas.md)), sem `suggestions`.
@@ -178,6 +180,7 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 - [ ] Com `--format json`, o stdout é um único documento JSON válido (`json.loads` do stdout inteiro funciona), sem nenhum texto adicional
 - [ ] Todo documento tem `schema_version`, `command`, `status` e, quando o arquivo foi lido, `file`
 - [ ] `info` emite `problems` e `suggestions`; `profile` emite `duplicates` e `columns` com as estatísticas de [003](003-profile-estatistico.md); `clean` emite `problems` (diagnóstico) ou `operations` + `output` (operação), nos formatos acima
+- [ ] O `count` da categoria `types` é o total de valores numéricos da coluna inteira, não da amostra
 - [ ] Números sem formatação pt-BR nem arredondamento; `NaN`/`inf` como `null`; valores não JSON nativos (datas etc.) serializados sem erro
 - [ ] Erros (arquivo inexistente, formato não suportado, coluna desconhecida, etc.) saem como `{"status": "error", "error": {...}}`, com o mesmo exit code do modo texto
 - [ ] `clean` em modo operação com `--format json` e sem `--output` gera erro claro, exit code 2, nada gravado
@@ -195,6 +198,7 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 ## Notas para implementação
 - **Separar cálculo de apresentação no `clean`.** Hoje cada `_apply_*` de [src/clean.py](../src/clean.py) faz `print` do próprio resumo. Eles passam a devolver `(df, relatório)`, em que o relatório é um dicionário no formato da tabela de `operations`. Um renderizador de texto produz exatamente as linhas de hoje, e um de JSON serializa a lista. [src/info.py](../src/info.py) e [src/profiler.py](../src/profiler.py) já calculam antes de imprimir; só precisam do ramo JSON.
 - **Mensagens de erro:** os pontos que hoje fazem `print(mensagem)` e `return código` passam a chamar um helper que imprime em texto ou em JSON, conforme o formato.
+- **`types`:** em `detect_numeric_as_text` ([src/quality.py](../src/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.
 - **`Finding`:** ganha um campo opcional `examples` (padrão vazio), usado só por `case_inconsistency`. A `message` de texto desse detector continua sendo montada como hoje, para não mudar o modo texto.
 - **Serialização:** `json.dumps(..., ensure_ascii=False, indent=2, default=...)`, com um `default` que trata `date`/`datetime` (ISO) e cai em `str()` para o resto. `NaN`/`inf` tratados antes (o `json` da stdlib gera `NaN`, que não é JSON válido).
 - **`--format`:** pode reaproveitar o padrão de `Enum` já usado em [src/structures/](../src/structures/) (`FileType`, `EncodingType`) para o Typer validar os valores.

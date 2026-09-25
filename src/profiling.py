@@ -30,9 +30,9 @@ def _numeric_stats(series):
             "outliers": 0,
         }
 
-    p25 = non_null.quantile(0.25)
-    p50 = non_null.quantile(0.5)
-    p75 = non_null.quantile(0.75)
+    p25 = non_null.quantile(0.25, interpolation="linear")
+    p50 = non_null.quantile(0.5, interpolation="linear")
+    p75 = non_null.quantile(0.75, interpolation="linear")
     iqr = p75 - p25
     lower_bound = p25 - 1.5 * iqr
     upper_bound = p75 + 1.5 * iqr
