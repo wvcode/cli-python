@@ -190,6 +190,22 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 
 Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestJsonOutput`). A saída em texto foi comparada com a versão anterior à spec (`info`, `profile` e `clean` nos arquivos de [examples/](../examples/), com e sem operações, e nos caminhos de erro) e é idêntica.
 
+## Extensão — ocultar valores de células (`--redact-values`)
+Adicionada ao planejar [020-mcp-server](020-mcp-server.md): o JSON de `profile` (`top_values`) e alguns campos de `clean`/`info` (`case_inconsistency.examples`, `unrecognized_examples`, `failed_examples`) trazem valores reais das células. Isso é o esperado para uso direto — a própria pessoa lendo o próprio arquivo — mas quando esse JSON alimenta um agente de IA, os valores passam a trafegar para um segundo destinatário (o provedor do modelo), o que pede uma forma de desligar isso sem perder as contagens. A flag é do `info`/`profile`/`clean` (útil também fora do MCP — ex.: colar a saída de `clean` num ticket de suporte sem vazar dado do cliente), e o servidor MCP de [020](020-mcp-server.md) só muda o padrão dela para `True` nas próprias chamadas.
+
+```bash
+datatool profile clientes.csv --redact-values
+datatool clean clientes.csv --redact-values
+```
+
+### Critérios de aceite da extensão
+- [ ] `--redact-values` (padrão `false`, mesmo comportamento de hoje) existe em `info`, `profile` e `clean`, nos dois formatos (`text` e `json`)
+- [ ] Em `profile`, `top_values[].value` vira um marcador posicional (`"<valor 1>"`, `"<valor 2>"`, ...); `count`/`percent` continuam reais
+- [ ] Em `info`/`clean` (diagnóstico), o finding `case_inconsistency` não traz `examples` no JSON, e a `message` (texto e JSON) vira o resumo (`"N variações de capitalização"`) mesmo em modo texto — hoje só o JSON resume, o texto lista as variantes
+- [ ] Em `clean` (operações), `unrecognized_examples`/`failed_examples` saem vazios no JSON, e o texto não lista os valores (mostra só a contagem e "(valores ocultos por --redact-values)")
+- [ ] Nada além de valores de célula é afetado: nomes de coluna, contagens, caminhos de arquivo e tipos continuam aparecendo normalmente
+- [ ] `--redact-values` nunca muda o arquivo gravado por `--output` — afeta só o relatório impresso/retornado
+
 ## Fora de escopo
 - `--format json` no `convert` (o `--show-stats` é o único relatório dele) e nos comandos-esqueleto.
 - Outros formatos (YAML, CSV do relatório, Markdown).
@@ -203,6 +219,7 @@ Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestJsonOutput`). 
 - No `clean`, cada `_apply_*` devolve `(df, relatório)`. Em modo texto, o relatório é impresso logo depois de cada operação, com as mesmas linhas de antes; em JSON, os relatórios são acumulados em `operations`.
 - `unrecognized_distinct`/`failed_distinct` foram acrescentados aos relatórios de `normalize_dates`/`fix_types` em relação ao desenho original: o modo texto precisa do número de valores distintos para imprimir `... e mais N valores`, e o campo também é útil no JSON.
 - Com `--format json` e operações sem `--output`, o erro é dado antes de ler o arquivo, sem processar nada.
+- **Pendência para [020-mcp-server](020-mcp-server.md):** `print_json`/`fail` hoje só imprimem; não devolvem o dict montado. O servidor MCP precisa do dict em Python, sem capturar stdout. Quando 020 for implementada, `print_json`/`fail` são divididos em `build_document`/`build_error` (montam e devolvem o dict) e uma casca fina que imprime; `info`/`profile`/`clean`/`convert` passam a devolver `(exit_code, document)`. É um refactor interno — não muda nenhuma saída do CLI nem os critérios desta spec, por isso o desenho fica descrito em 020, não aqui.
 
 ## Notas originais do desenho
 - **Separar cálculo de apresentação no `clean`.** Hoje cada `_apply_*` de [src/clean.py](../src/clean.py) faz `print` do próprio resumo. Eles passam a devolver `(df, relatório)`, em que o relatório é um dicionário no formato da tabela de `operations`. Um renderizador de texto produz exatamente as linhas de hoje, e um de JSON serializa a lista. [src/info.py](../src/info.py) e [src/profiler.py](../src/profiler.py) já calculam antes de imprimir; só precisam do ramo JSON.

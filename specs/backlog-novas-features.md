@@ -27,6 +27,7 @@ Os IDs usam o prefixo `F` para não colidir com a numeração das specs. Esforç
 | F13 | Histórico de operações e reprodutibilidade | Ideia | Pro | M | Baixa | — |
 | F14 | Conectores (PostgreSQL, S3) | Ideia | Team | G | Baixa | — |
 | F15 | Unir arquivos (`concat`/`join`) | Novo | Community | M | Baixa | — |
+| F16 | Servidor MCP sobre o CLI (agentes de IA) | Novo | Community | M | Alta | [020](020-mcp-server.md) |
 
 Há também uma pendência de **higiene** (não é feature, mas afeta o produto): ver [Reconciliar comandos-esqueleto](#reconciliar-comandos-esqueleto).
 
@@ -158,6 +159,27 @@ datatool clean clientes.csv --mask-columns cpf,email --output clientes_anon.csv
 - Detecção de colunas com dados pessoais reaproveitando os detectores de e-mail/telefone (005) e CPF (F02)
 - Estratégias: mascarar parcialmente (`***.456.789-**`), hash determinístico (mantém joins possíveis entre arquivos) ou remover
 - Hash com salt configurável, para não ser revertível por dicionário de CPFs
+
+---
+
+### F16 — Servidor MCP sobre o CLI (agentes de IA)
+
+> Detalhada na spec [020-mcp-server](020-mcp-server.md).
+
+**Problema.** Um agente de IA (Claude Code, Claude Desktop, Cursor, ...) que precisa diagnosticar ou limpar um dataset hoje só pode chamar o `datatool` via shell (frágil de parsear) ou escrever código de análise do zero — reintroduzindo exatamente os problemas de qualidade que o datatool já resolve (delimitador/encoding do Excel BR, datas em 18 formatos, `R$ 1.234,56`, CPF com zero à esquerda perdido).
+
+**Proposta.**
+
+```json
+{"mcpServers": {"datatool": {"command": "datatool-mcp", "args": ["--root", "/projeto"]}}}
+```
+
+- Um servidor [MCP](https://modelcontextprotocol.io/) local (stdio), com uma ferramenta por comando/modo (`info`, `profile`, `clean` diagnóstico, `clean` operação, `convert`), devolvendo o mesmo JSON de F03/[019](019-saida-json.md)
+- **Community, não Pro** — travar o acesso ao servidor atrás de licença não é defensável (roda localmente, é fácil de contornar) nem estratégico (afastaria o público mais propenso a adotar e recomendar via agentes); o modelo de monetização continua nas ferramentas Pro que o servidor expõe conforme 004/012/013/014/015 forem implementadas, gated por 016 como no CLI
+- Guardrails que o CLI direto não precisa, por ser um agente decidindo e executando sem uma pessoa conferindo cada comando: sandbox de diretório, nunca sobrescrever o arquivo de entrada, exigir confirmação explícita para sobrescrever um arquivo de saída existente
+- Valores de célula (top-N do profiling, exemplos de valores inválidos) ficam ocultos por padrão nas respostas — só as contagens — porque esse texto passa a trafegar para o provedor do modelo de IA, não só para quem roda o CLI
+
+**Onde mexe.** Novo módulo `src/mcp_server.py`; reaproveita quase tudo de [019](019-saida-json.md) (formato) e [017](017-csv-delimitador-encoding.md) (log). Exigiu duas extensões pequenas nas specs existentes: `--redact-values` em 019 (ocultar valores em qualquer saída, não só MCP) e `--columns`/`--max-columns` em [003](003-profile-estatistico.md) (limitar o tamanho da resposta do `profile` em datasets largos).
 
 ---
 
@@ -303,3 +325,4 @@ Hoje eles aparecem no `--help` e sucedem com exit code 0 sem fazer nada, o que c
 2. **F01, F04 e a reconciliação dos esqueletos** logo em seguida: são pequenos e removem atritos que um usuário novo encontraria no primeiro uso.
 3. **F02 e F03** a seguir: F02 é o diferencial "feito para o Brasil" mais barato; F03 desbloqueia 004, 014 e 015.
 4. **F05 e F06** como primeiros candidatos a Pro, antes ou junto do 012 — têm argumento de venda claro (CI e LGPD) e reaproveitam os detectores existentes.
+5. **F16** depois de F01/F03 estarem sólidos (usa o log de F01 e o formato de F03/019) — é o canal de distribuição mais barato para o público técnico (devs usando agentes), e cada ferramenta Pro que o servidor expõe reaproveita o licenciamento de 016 assim que a feature Pro correspondente existir.

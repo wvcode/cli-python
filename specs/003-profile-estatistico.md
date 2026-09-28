@@ -30,6 +30,22 @@ Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestProfileCommand
 - Outliers via IQR: `[Q1 - 1.5*IQR, Q3 + 1.5*IQR]`, com Q1/Q3 = p25/p75 acima.
 - `--key` aceita uma ou mais colunas separadas por vírgula; se alguma coluna não existir, retorna erro com exit code != 0.
 
+## Extensão — seleção e limite de colunas (`--columns`, `--max-columns`)
+Adicionada ao planejar [020-mcp-server](020-mcp-server.md): um agente que chama `profile` via MCP num dataset largo (muitas colunas) recebe uma resposta grande demais para o contexto do modelo. A extensão é genericamente útil também para uso direto do CLI (relatórios exportados de ERPs com centenas de colunas), então fica no `profile`, não só na camada MCP.
+
+```bash
+datatool profile vendas.csv --columns preco,quantidade
+datatool profile vendas.csv --max-columns 50
+```
+
+### Critérios de aceite da extensão
+- [ ] `--columns col1,col2` restringe o profiling a essas colunas (mantendo `duplicates`/`duplicates_total`, que são do dataset inteiro, não por coluna); coluna inexistente é erro claro, exit code != 0, igual a `--key`
+- [ ] `--max-columns N`: se, depois de aplicar `--columns` (quando informado), sobrarem mais de N colunas, só as N primeiras (ordem do dataset) são perfiladas
+- [ ] Sem `--max-columns`, o comportamento é o de hoje (todas as colunas) — a flag é puramente aditiva, nenhum critério já marcado nesta spec muda
+- [ ] Em `--format json` (spec [019](019-saida-json.md)), quando há truncamento por `--max-columns`, o documento traz `"columns_returned"` (quantas vieram), `"columns_total"` (quantas existem após `--columns`) e `"truncated_columns"` (nomes das que ficaram de fora, para pedir depois via `--columns`)
+- [ ] Em `--format text`, quando há truncamento, uma linha ao final avisa quantas colunas ficaram de fora e sugere `--columns`
+- [ ] `--columns` e `--max-columns` são combináveis com `--key`
+
 ## Fora de escopo
 - Exportação em HTML (spec 004)
 
