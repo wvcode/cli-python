@@ -39,12 +39,20 @@ datatool profile vendas.csv --max-columns 50
 ```
 
 ### Critérios de aceite da extensão
-- [ ] `--columns col1,col2` restringe o profiling a essas colunas (mantendo `duplicates`/`duplicates_total`, que são do dataset inteiro, não por coluna); coluna inexistente é erro claro, exit code != 0, igual a `--key`
-- [ ] `--max-columns N`: se, depois de aplicar `--columns` (quando informado), sobrarem mais de N colunas, só as N primeiras (ordem do dataset) são perfiladas
-- [ ] Sem `--max-columns`, o comportamento é o de hoje (todas as colunas) — a flag é puramente aditiva, nenhum critério já marcado nesta spec muda
-- [ ] Em `--format json` (spec [019](019-saida-json.md)), quando há truncamento por `--max-columns`, o documento traz `"columns_returned"` (quantas vieram), `"columns_total"` (quantas existem após `--columns`) e `"truncated_columns"` (nomes das que ficaram de fora, para pedir depois via `--columns`)
-- [ ] Em `--format text`, quando há truncamento, uma linha ao final avisa quantas colunas ficaram de fora e sugere `--columns`
-- [ ] `--columns` e `--max-columns` são combináveis com `--key`
+- [x] `--columns col1,col2` restringe o profiling a essas colunas (mantendo `duplicates`/`duplicates_total`, que são do dataset inteiro, não por coluna); coluna inexistente é erro claro, exit code != 0, igual a `--key`
+- [x] `--max-columns N`: se, depois de aplicar `--columns` (quando informado), sobrarem mais de N colunas, só as N primeiras (ordem do dataset) são perfiladas
+- [x] Sem `--max-columns`, o comportamento é o de hoje (todas as colunas) — a flag é puramente aditiva, nenhum critério já marcado nesta spec muda
+- [x] Em `--format json` (spec [019](019-saida-json.md)), quando há truncamento por `--max-columns`, o documento traz `"columns_returned"` (quantas vieram), `"columns_total"` (quantas existem após `--columns`) e `"truncated_columns"` (nomes das que ficaram de fora, para pedir depois via `--columns`)
+- [x] Em `--format text`, quando há truncamento, uma linha ao final avisa quantas colunas ficaram de fora e sugere `--columns`
+- [x] `--columns` e `--max-columns` são combináveis com `--key`
+
+Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestProfileColumnsFilter`). A saída padrão (sem `--columns`/`--max-columns`) foi comparada com a versão anterior à extensão e é idêntica.
+
+#### Nota de implementação
+- `profiling.py`'s `profile(df, key_columns=None, columns=None)` ganhou o parâmetro `columns`: quando informado, só essas colunas viram `ColumnProfile`; `rows`/`columns` (largura) e `duplicates_total` continuam calculados sobre `df` inteiro, não sobre a seleção.
+- A ordem final de colunas ignora a ordem digitada em `--columns` — [src/profiler.py](../src/profiler.py) filtra `df.columns` (que já está na ordem do dataset) pelo conjunto pedido, e só então aplica `--max-columns` cortando os N primeiros dessa lista. Isso é o que garante "ordem do dataset" mesmo com `--columns idade,nome` (nome vem antes de idade no dataset de exemplo).
+- `--max-columns` com valor menor que 1 é erro claro, exit code 2, por segurança (evita fatiar com índice negativo); a spec original não previa esse valor, mas o comportamento sem essa checagem seria confuso.
+- `columns_returned`/`columns_total`/`truncated_columns` só aparecem no JSON quando há truncamento de fato — sem `--max-columns`, ou com `--max-columns` maior que o total de colunas, o documento é idêntico ao de antes desta extensão.
 
 ## Fora de escopo
 - Exportação em HTML (spec 004)

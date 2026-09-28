@@ -6,7 +6,7 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile`, `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`), saída em JSON (`--format json`) em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`
+- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`, validação de CPF/CNPJ
 - **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
@@ -124,6 +124,17 @@ Coluna "cidade" (categórica)
     São Paulo: 1 (10.00%)
     ...
 ```
+
+Em datasets largos, `--columns` e `--max-columns` restringem o tamanho da saída:
+
+```bash
+datatool profile vendas.csv --columns preco,quantidade
+datatool profile vendas.csv --max-columns 50
+```
+
+- `--columns col1,col2` perfila só essas colunas (a contagem de linhas duplicadas continua do dataset inteiro); coluna inexistente é erro claro, igual a `--key`
+- `--max-columns N` perfila só as N primeiras colunas **na ordem do dataset** (mesmo que `--columns` peça outra ordem); o que ficou de fora aparece no fim do texto, ou em `columns_returned`/`columns_total`/`truncated_columns` no JSON
+- Sem `--max-columns`, nada muda — a flag é só um limite opcional
 
 ### `clean` — detectar e corrigir problemas de qualidade
 
@@ -259,6 +270,28 @@ datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp --output v
 - Coluna inexistente, entrada sem `:` em `--rename-columns` ou renomeação que geraria nomes repetidos são erro claro, sem gravar nada
 - São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
 
+`--normalize-documents` valida e padroniza CPF/CNPJ, inclusive o CNPJ alfanumérico (letras nas 12 primeiras posições, emitido pela Receita desde julho de 2026):
+
+```bash
+datatool clean clientes.csv                                    # diagnóstico passa a incluir CPF/CNPJ
+datatool clean clientes.csv --normalize-documents digits       # 123.456.789-09 → 12345678909
+datatool clean clientes.csv --normalize-documents masked        # 12345678909 → 123.456.789-09
+datatool clean clientes.csv --normalize-documents masked --document-columns cpf,cnpj_empresa
+```
+
+- Detecta colunas de texto ou numéricas que "parecem" CPF/CNPJ (formato batendo numa amostra e dígito verificador majoritariamente válido, máscara presente, ou `cpf`/`cnpj`/`documento` no nome da coluna) — sem `--document-columns`, aplica a todas elas
+- Diagnóstico (`clean` sem flags e `info`) reporta, por coluna: dígito verificador inválido, todos os dígitos iguais (ex.: `111.111.111-11`), valores fora do formato, mistura de máscara/sem máscara e, em coluna numérica, zeros à esquerda perdidos na leitura
+- `digits` remove a máscara; `masked` aplica `XXX.XXX.XXX-XX` (CPF) ou `XX.XXX.XXX/XXXX-XX` (CNPJ), com letras sempre maiúsculas
+- Coluna numérica (CPF lido como `Int64` perde zeros à esquerda) é completada com `0` e sempre vira texto
+- Normalizar não valida: documentos com dígito inválido são formatados do mesmo jeito, e o comando informa quantos continuam inválidos; só valores fora do formato (nem CPF nem CNPJ) ficam como estão
+- Nunca mostra o CPF/CNPJ no terminal fora do próprio dataset — o diagnóstico e o log só trazem contagens
+
+```text
+"cpf": 1.180 documentos normalizados
+"cpf": 23 com dígito verificador inválido (formatados, mas continuam inválidos)
+"cpf": 2 valores fora do formato de CPF/CNPJ, mantidos sem alteração
+```
+
 ### CSV com `;` ou em `cp1252` (Excel em português)
 
 `convert`, `info`, `profile` e `clean` detectam sozinhos o delimitador (`,`, `;`, tab ou `|`) e o encoding (UTF-8, com ou sem BOM, ou `cp1252`) do CSV de entrada. Um CSV exportado pelo Excel em português funciona sem nenhuma opção. Para forçar:
@@ -320,6 +353,20 @@ datatool clean clientes.csv --fix-types --remove-duplicates --output limpo.parqu
 - Erros também saem em JSON (`"status": "error"`), com o mesmo exit code do modo texto
 - No `clean` com operações, `--output` é obrigatório: o JSON é só o relatório, os dados vão para o arquivo
 - O formato completo, campo a campo, está em [specs/019-saida-json.md](specs/019-saida-json.md)
+
+### Ocultar valores de célula (`--redact-values`)
+
+`info`, `profile` e `clean` aceitam `--redact-values` (padrão desligado), nos dois formatos, para tirar valores de célula do relatório sem perder as contagens — útil ao colar a saída num chat de IA, ticket de suporte ou log de CI:
+
+```bash
+datatool profile clientes.csv --redact-values
+datatool clean clientes.csv --redact-values
+```
+
+- Em `profile`, os valores mais frequentes viram `<valor 1>`, `<valor 2>`, ...; `count`/`percent` continuam reais
+- No diagnóstico, a inconsistência de capitalização passa a mostrar só a contagem (`"3 variações de capitalização"`), em vez de listar as variantes
+- Nas operações do `clean` (`--normalize-dates`, `--fix-types`, `--normalize-documents`), os valores não reconhecidos somem da lista — fica só a contagem e `(valores ocultos por --redact-values)`
+- Nunca muda o arquivo gravado por `--output`, só o que é impresso ou volta em `--format json`
 
 ### Em desenvolvimento
 

@@ -86,23 +86,25 @@ As contagens do diagnóstico são **exatas**, sobre todos os valores distintos d
 
 ## Critérios de aceite
 **Diagnóstico (`clean` sem flags e `info`)**
-- [ ] Detecta colunas de CPF, de CNPJ e mistas por conteúdo, com ou sem máscara, e também pelo nome da coluna conforme as regras de detecção
-- [ ] Não confunde com documento colunas de telefone (ex.: `11912345678`) ou de ID numérico sequencial sem `cpf`/`cnpj`/`documento` no nome
-- [ ] Reporta, por coluna: documentos com dígito verificador inválido, documentos com todos os dígitos iguais, valores fora do formato, mistura de formatos (com e sem máscara) e, para colunas numéricas, quantos tinham zeros à esquerda perdidos
-- [ ] Valida CNPJ alfanumérico conforme a IN RFB nº 2.229/2024; um CNPJ alfanumérico válido não é reportado como inválido
-- [ ] Os dois arquivos de [examples/](../examples/) passam a mostrar os CPFs inválidos da coluna `cpf`
-- [ ] O `info` mostra os problemas de documento e sugere `--normalize-documents` quando há formatos misturados ou coluna lida como número
-- [ ] Contagens exatas; tempo aceitável para ~200 mil linhas, como em [002](002-info-diagnostico.md)/[005](005-clean-detectar-problemas.md)
+- [x] Detecta colunas de CPF, de CNPJ e mistas por conteúdo, com ou sem máscara, e também pelo nome da coluna conforme as regras de detecção
+- [x] Não confunde com documento colunas de telefone (ex.: `11912345678`) ou de ID numérico sequencial sem `cpf`/`cnpj`/`documento` no nome
+- [x] Reporta, por coluna: documentos com dígito verificador inválido, documentos com todos os dígitos iguais, valores fora do formato, mistura de formatos (com e sem máscara) e, para colunas numéricas, quantos tinham zeros à esquerda perdidos
+- [x] Valida CNPJ alfanumérico conforme a IN RFB nº 2.229/2024; um CNPJ alfanumérico válido não é reportado como inválido
+- [x] Os dois arquivos de [examples/](../examples/) passam a mostrar os CPFs inválidos da coluna `cpf`
+- [x] O `info` mostra os problemas de documento e sugere `--normalize-documents` quando há formatos misturados ou coluna lida como número
+- [x] Contagens exatas; tempo aceitável para ~200 mil linhas, como em [002](002-info-diagnostico.md)/[005](005-clean-detectar-problemas.md)
 
 **Operador `--normalize-documents`**
-- [ ] `digits` e `masked` produzem o formato pedido para CPF, CNPJ numérico e CNPJ alfanumérico
-- [ ] Colunas numéricas voltam a ter os zeros à esquerda e passam a ser texto
-- [ ] `--document-columns` restringe as colunas; coluna inexistente ou valor inválido de `--normalize-documents` gera erro claro, exit code 2, sem gravar nada
-- [ ] Valores fora do formato são mantidos como estão e reportados; documentos inválidos são formatados e reportados
+- [x] `digits` e `masked` produzem o formato pedido para CPF, CNPJ numérico e CNPJ alfanumérico
+- [x] Colunas numéricas voltam a ter os zeros à esquerda e passam a ser texto
+- [x] `--document-columns` restringe as colunas; coluna inexistente ou valor inválido de `--normalize-documents` gera erro claro, exit code 2, sem gravar nada
+- [x] Valores fora do formato são mantidos como estão e reportados; documentos inválidos são formatados e reportados
 
 **Interação com o que existe**
-- [ ] `clean --fix-types` ignora colunas detectadas como documento, e o `info` deixa de sugerir `--fix-types` para elas
-- [ ] O log de [017](017-csv-delimitador-encoding.md), se já implementado, registra só contagens; nenhum CPF/CNPJ aparece no log
+- [x] `clean --fix-types` ignora colunas detectadas como documento, e o `info` deixa de sugerir `--fix-types` para elas
+- [x] O log de [017](017-csv-delimitador-encoding.md) registra só contagens; nenhum CPF/CNPJ aparece no log
+
+Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanNormalizeDocuments`, 24 testes). A saída em texto dos comandos e caminhos que não mudam (`profile`, `convert`, `clean` com outros operadores, erros de arquivo) foi comparada com a versão anterior à spec e é idêntica; as únicas diferenças são os novos diagnósticos de documento em `info`/`clean` sem flags. Testado manualmente com 200 mil CPFs distintos: ~0,9s para o diagnóstico (`info`), ~1,7s para `--normalize-documents` com gravação — mais lento que os detectores de [002](002-info-diagnostico.md)/[003](003-profile-estatistico.md) (que não fazem conta de dígito verificador por valor), mas dentro do aceitável para uma CLI.
 
 ## Fora de escopo
 - Remover ou anular documentos inválidos (ex.: `--drop-invalid-documents`). Pode virar um operador próprio depois.
@@ -113,12 +115,33 @@ As contagens do diagnóstico são **exatas**, sobre todos os valores distintos d
 - Mudar a leitura para trazer a coluna `cpf` como texto desde o início. A spec [017](017-csv-delimitador-encoding.md) mexe na leitura de CSV e pode ganhar isso depois; aqui os zeros são recuperados completando com `0`.
 - Trocar os CPFs fictícios dos arquivos de exemplo por válidos.
 
-## Notas para implementação
-- Validação e detecção em [src/quality.py](../src/quality.py), no padrão dos detectores existentes: um `detect_documents(df)` que devolve `Finding`s, chamado por `analyze_clean` (diagnóstico do `clean`) e por `analyze` (`info`), com uma categoria nova em `_SUGGESTIONS` de [src/info.py](../src/info.py) apontando para `--normalize-documents masked`. O `analyze` hoje já passa `skip_columns` para `detect_numeric_as_text` (para não sugerir `--fix-types` em colunas de data); as colunas de documento entram nesse mesmo conjunto.
-- A lista de colunas de documento detectadas precisa ser reaproveitada por `_detect_numeric_text_columns` em [src/clean.py](../src/clean.py), para o `--fix-types` ignorá-las.
-- Validar por valor distinto (`unique()`) e mapear de volta. Com 200 mil CPFs distintos, a validação em Python puro custa algumas centenas de milissegundos, dentro da meta.
+## Formato JSON (spec [019](019-saida-json.md))
+As categorias de `Finding` novas seguem a tabela de `count` de [019](019-saida-json.md): `document_invalid`, `document_all_same`, `document_out_of_format`, `document_format_variance`, `document_numeric_column` (essa última só em colunas numéricas). Todas têm `column` preenchida.
+
+A operação `normalize_documents` (modo com flags do `clean`) aparece em `operations` assim:
+
+```json
+{"operation": "normalize_documents", "columns": [
+  {"column": "cpf", "normalized": 1180, "still_invalid_count": 23,
+   "unrecognized_count": 2, "unrecognized_distinct": 2,
+   "unrecognized_examples": ["a-combinar", "sem-documento"]}
+]}
+```
+
+`still_invalid_count` é a soma de dígito-verificador-inválido e todos-iguais (o relatório de operação não separa os dois como o diagnóstico separa); `unrecognized_*` segue o nome já usado por `normalize_dates` (valores fora do formato, mantidos como estão).
+
+## Nota de implementação
+- Validação e detecção em [src/quality.py](../src/quality.py): `detect_document_columns(df)` decide, por coluna, se é documento (amostra + evidência, como descrito acima); `detect_documents(df)` gera os `Finding`s a partir de `_document_summary` (contagem exata via `value_counts()` sobre a coluna inteira, não a amostra). Chamados por `analyze_clean` (diagnóstico do `clean`) e por `analyze` (`info`); `analyze` calcula `detect_document_columns` separadamente do `detect_documents` porque uma coluna pode ser detectada como documento sem gerar nenhum `Finding` (ex.: todos os CPFs válidos e no mesmo formato) — nesse caso ela ainda precisa entrar no `skip_columns` de `detect_numeric_as_text`.
+- CPF/CNPJ reconhecidos por três padrões cada (sem máscara, com máscara completa, com máscara parcial só do dígito verificador — ex. `123456789-09`), em `_document_shape`; para colunas numéricas, `_document_shape_numeric` não usa regex — qualquer inteiro com até 14 dígitos "parece" documento (a validação é quem filtra depois), e o valor é completado com `zfill` para 11 (CPF) ou 14 (CNPJ) posições.
+- Dígito verificador: `_check_digit(chars, weights)` genérico (usado por CPF e CNPJ), com valor de caractere `ord(c) - 48` (dígitos `0`-`9` → 0-9, letras `A`-`Z` → 17-42, conforme a tabela da Receita). Verificado contra CPFs/CNPJs de teste publicamente conhecidos (`52998224725`, `11222333000181`, `11444777000161`) antes de implementar, além do exemplo alfanumérico desta spec (`12ABC34501DE35`).
+- "Todos os dígitos iguais" é checado **antes** do dígito verificador em `_validate_document`, porque alguns desses valores (ex.: `11111111111`) passam matematicamente na conta.
+- **Evidência de que é documento** (`detect_document_columns`): testada por simulação antes de fixar o limiar — uma coluna de 5.000 números de 11 dígitos aleatórios passa no dígito verificador de CPF em ~1,4% dos casos (perto do ~1% citado na spec), bem abaixo do limiar de maioria (>50%) usado aqui; uma coluna de IDs sequenciais 1-1000 fica em ~0,9%. Confirma que o critério é robusto sem precisar de regra adicional para colunas pequenas.
+- A lista de colunas de documento é reaproveitada por `_detect_numeric_text_columns` em [src/clean.py](../src/clean.py) (ignoradas por `--fix-types`) e pela própria `_apply_normalize_documents`.
+- `_apply_normalize_documents`: para coluna numérica, faz `pl.col(column).cast(pl.Utf8)` primeiro e opera inteiramente em texto dali em diante — assim a mesma função de shape/validação serve para colunas Utf8 e para as que eram Int64. Contagens (`is_in`) são calculadas **antes** do `replace`, no mesmo padrão de `_apply_normalize_dates`/`_apply_fix_types`.
+- Validar por valor distinto (`unique()`/`value_counts()`) e mapear de volta, como os demais operadores. Testado com 200 mil CPFs distintos (arquivo sintético, sem repetição): ~0,9s para o diagnóstico, ~1,7s para `--normalize-documents` gravando o resultado.
+- Sugestão `--normalize-documents` no `info`: como ela precisa dispar por **duas** categorias (`document_format_variance` OU `document_numeric_column`), mas o campo `category` da sugestão no JSON deve continuar sendo uma string só (não uma lista, para não quebrar o formato de [019](019-saida-json.md)), `_SUGGESTIONS` ganhou uma categoria própria `"documents"` e um dicionário `_SUGGESTION_TRIGGERS` que mapeia essa categoria às duas categorias de `Finding` que a disparam. As demais sugestões (`types`, `duplicates`, `dates`, `nulls`) continuam mapeando 1:1, sem precisar do dicionário.
 - Os detectores atuais de [005](005-clean-detectar-problemas.md) continuam valendo. A duplicidade por chave pode acabar comparando `123.456.789-09` com `12345678909` como valores diferentes; o `--normalize-documents` antes do `--remove-duplicates --key cpf` resolve, e a ordem de aplicação acima garante isso.
-- Referência do CNPJ alfanumérico: Instrução Normativa RFB nº 2.229, de 15 de outubro de 2024, e a documentação técnica de cálculo do dígito verificador publicada pela Receita. Confirmar os pesos e a tabela de valores dos caracteres nessa fonte ao implementar.
+- Referência do CNPJ alfanumérico: Instrução Normativa RFB nº 2.229, de 15 de outubro de 2024, e a documentação técnica de cálculo do dígito verificador publicada pela Receita.
 
 ## Dependências
 [005-clean-detectar-problemas](005-clean-detectar-problemas.md) (padrão do diagnóstico), [010-clean-corrigir-tipos](010-clean-corrigir-tipos.md) (interação com `--fix-types`). Relacionada a [017](017-csv-delimitador-encoding.md) (log, sem valores de células) e à F06 do backlog (mascaramento LGPD).

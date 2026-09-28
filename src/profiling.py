@@ -90,7 +90,11 @@ def profile_column(df, column, top_n=TOP_N):
     )
 
 
-def profile(df, key_columns=None):
+def profile(df, key_columns=None, columns=None):
+    # `columns` restringe quais colunas ganham ColumnProfile (spec 003, extensão
+    # --columns/--max-columns); "rows"/"columns"(largura)/"duplicates_total"
+    # continuam do dataset inteiro, não da seleção.
+    columns_to_profile = columns if columns is not None else df.columns
     return {
         "rows": df.height,
         "columns": df.width,
@@ -99,5 +103,7 @@ def profile(df, key_columns=None):
             duplicate_row_count(df, subset=key_columns) if key_columns else None
         ),
         "key_columns": key_columns,
-        "column_profiles": [profile_column(df, column) for column in df.columns],
+        "column_profiles": [
+            profile_column(df, column) for column in columns_to_profile
+        ],
     }

@@ -56,6 +56,14 @@ EncodingOption = Annotated[
         help="Encoding do CSV de entrada (ex.: cp1252, latin-1). Se omitido, detecta.",
     ),
 ]
+RedactValuesOption = Annotated[
+    bool,
+    typer.Option(
+        "--redact-values",
+        help="Oculta valores de célula no relatório (top-N, exemplos); "
+        "mantém as contagens.",
+    ),
+]
 
 dataset_app = typer.Typer()
 app.add_typer(dataset_app, name="dataset")
@@ -97,8 +105,9 @@ def info(
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
+    redact_values: RedactValuesOption = False,
 ):
-    result = file_info(filename, output_format, sep, encoding)
+    result = file_info(filename, output_format, sep, encoding, redact_values)
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -117,8 +126,32 @@ def profile(
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
+    columns: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Restringe o profiling a essas colunas, separadas por vírgula. "
+            "Se omitido, perfila todas."
+        ),
+    ] = None,
+    max_columns: Annotated[
+        Optional[int],
+        typer.Option(
+            help="Perfila só as N primeiras colunas (ordem do dataset), "
+            "avisando quantas ficaram de fora. Se omitido, sem limite."
+        ),
+    ] = None,
+    redact_values: RedactValuesOption = False,
 ):
-    result = file_profile(filename, key, output_format, sep, encoding)
+    result = file_profile(
+        filename,
+        key,
+        output_format,
+        sep,
+        encoding,
+        columns,
+        max_columns,
+        redact_values,
+    )
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -153,6 +186,17 @@ def clean(
         Optional[str],
         typer.Option(help="Colunas alvo de --drop-null, separadas por vírgula"),
     ] = None,
+    normalize_documents: Annotated[
+        Optional[str],
+        typer.Option(help="Formato de saída para CPF/CNPJ: 'digits' ou 'masked'."),
+    ] = None,
+    document_columns: Annotated[
+        Optional[str],
+        typer.Option(
+            help="Colunas alvo de --normalize-documents, separadas por vírgula. "
+            "Se omitido, detecta automaticamente."
+        ),
+    ] = None,
     normalize_dates: Annotated[bool, typer.Option("--normalize-dates")] = False,
     date_columns: Annotated[
         Optional[str],
@@ -181,6 +225,7 @@ def clean(
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
+    redact_values: RedactValuesOption = False,
 ):
     result = file_clean(
         filename,
@@ -193,6 +238,8 @@ def clean(
         fill_null,
         drop_null,
         columns,
+        normalize_documents,
+        document_columns,
         normalize_dates,
         date_columns,
         fix_types,
@@ -203,6 +250,7 @@ def clean(
         output_format,
         sep,
         encoding,
+        redact_values,
     )
     if result > 0:
         raise typer.Exit(code=result)

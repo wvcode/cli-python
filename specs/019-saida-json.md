@@ -199,12 +199,20 @@ datatool clean clientes.csv --redact-values
 ```
 
 ### Critérios de aceite da extensão
-- [ ] `--redact-values` (padrão `false`, mesmo comportamento de hoje) existe em `info`, `profile` e `clean`, nos dois formatos (`text` e `json`)
-- [ ] Em `profile`, `top_values[].value` vira um marcador posicional (`"<valor 1>"`, `"<valor 2>"`, ...); `count`/`percent` continuam reais
-- [ ] Em `info`/`clean` (diagnóstico), o finding `case_inconsistency` não traz `examples` no JSON, e a `message` (texto e JSON) vira o resumo (`"N variações de capitalização"`) mesmo em modo texto — hoje só o JSON resume, o texto lista as variantes
-- [ ] Em `clean` (operações), `unrecognized_examples`/`failed_examples` saem vazios no JSON, e o texto não lista os valores (mostra só a contagem e "(valores ocultos por --redact-values)")
-- [ ] Nada além de valores de célula é afetado: nomes de coluna, contagens, caminhos de arquivo e tipos continuam aparecendo normalmente
-- [ ] `--redact-values` nunca muda o arquivo gravado por `--output` — afeta só o relatório impresso/retornado
+- [x] `--redact-values` (padrão `false`, mesmo comportamento de hoje) existe em `info`, `profile` e `clean`, nos dois formatos (`text` e `json`)
+- [x] Em `profile`, `top_values[].value` vira um marcador posicional (`"<valor 1>"`, `"<valor 2>"`, ...); `count`/`percent` continuam reais
+- [x] Em `info`/`clean` (diagnóstico), o finding `case_inconsistency` não traz `examples` no JSON, e a `message` (texto e JSON) vira o resumo (`"N variações de capitalização"`) mesmo em modo texto — hoje só o JSON resume, o texto lista as variantes
+- [x] Em `clean` (operações), `unrecognized_examples`/`failed_examples` saem vazios no JSON, e o texto não lista os valores (mostra só a contagem e "(valores ocultos por --redact-values)")
+- [x] Nada além de valores de célula é afetado: nomes de coluna, contagens, caminhos de arquivo e tipos continuam aparecendo normalmente
+- [x] `--redact-values` nunca muda o arquivo gravado por `--output` — afeta só o relatório impresso/retornado
+
+Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestRedactValues`). O comportamento padrão (`--redact-values` omitido) foi comparado com a versão anterior à extensão e é idêntico.
+
+#### Nota de implementação
+- [src/quality.py](../src/quality.py) ganhou `display_message(finding, redact_values)`, usada por `info`/`clean` no modo texto no lugar de `finding.message` direto — só muda o resultado para `case_inconsistency`, reaproveitando o mesmo resumo (`_case_inconsistency_summary`) que `finding_to_dict` já calculava para o JSON. `finding_to_dict` ganhou o parâmetro `redact_values` (padrão `False`) para omitir `examples`.
+- Em `clean.py`, a redação das operações (`normalize_dates`/`fix_types`/`normalize_documents`) é feita em dois pontos independentes, sem tocar `_apply_*`: `_print_examples(examples, distinct_count, redact_values)` imprime `"(valores ocultos por --redact-values)"` em vez da lista, no modo texto; `_redact_report(report)` devolve uma cópia do relatório com os campos de exemplo (`unrecognized_examples`/`failed_examples`) esvaziados, aplicada só ao montar o JSON final (`operations`). O relatório "cru" (com os valores reais) continua sendo o que roda internamente e o que vai para o log — que já os omitia antes desta extensão.
+- `--redact-values` não entra em `has_operations`: é um modificador de relatório, nunca conta como operação de dado, então `clean arquivo.csv --redact-values` sozinho continua caindo no modo diagnóstico.
+- Log: sem mudança — o log de [017](017-csv-delimitador-encoding.md) já nunca incluía exemplos de valor, com ou sem `--redact-values`.
 
 ## Fora de escopo
 - `--format json` no `convert` (o `--show-stats` é o único relatório dele) e nos comandos-esqueleto.

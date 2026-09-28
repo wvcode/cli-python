@@ -48,22 +48,34 @@ def _print_numeric_stats(stats):
     print(f"  Outliers (IQR): {format_int_ptbr(stats['outliers'])}")
 
 
-def _print_categorical_stats(stats):
+def _redacted_value(index):
+    return f"<valor {index}>"
+
+
+def _print_categorical_stats(stats, redact_values):
     print(f"  Cardinalidade: {format_int_ptbr(stats['cardinality'])}")
     if stats["top_values"]:
         print(f"  Top {len(stats['top_values'])} valores:")
-        for value, count, percent in stats["top_values"]:
+        for index, (value, count, percent) in enumerate(stats["top_values"], start=1):
+            if redact_values:
+                value = _redacted_value(index)
             print(f"    {value}: {format_int_ptbr(count)} ({percent:.2f}%)")
 
 
-def _column_profile_to_dict(column_profile):
+def _column_profile_to_dict(column_profile, redact_values):
     stats = column_profile.stats
     if column_profile.kind != "numeric":
         stats = {
             "cardinality": stats["cardinality"],
             "top_values": [
-                {"value": value, "count": count, "percent": percent}
-                for value, count, percent in stats["top_values"]
+                {
+                    "value": _redacted_value(index) if redact_values else value,
+                    "count": count,
+                    "percent": percent,
+                }
+                for index, (value, count, percent) in enumerate(
+                    stats["top_values"], start=1
+                )
             ],
         }
     return {
@@ -76,7 +88,16 @@ def _column_profile_to_dict(column_profile):
     }
 
 
-def profile(filename, key, output_format=OutputFormat.TEXT, sep=None, encoding=None):
+def profile(
+    filename,
+    key,
+    output_format=OutputFormat.TEXT,
+    sep=None,
+    encoding=None,
+    columns=None,
+    max_columns=None,
+    redact_values=False,
+):
     # Verificar a existência e a validade do arquivo de entrada
     if not os.path.exists(filename):
         return fail(
@@ -130,8 +151,48 @@ def profile(filename, key, output_format=OutputFormat.TEXT, sep=None, encoding=N
                 2,
             )
 
-    result = compute_profile(df, key_columns=key_columns)
-    log.info("profiling — %s colunas", result["columns"])
+    requested_columns = None
+    if columns:
+        requested_columns = {column.strip() for column in columns.split(",")}
+        unknown_columns = [
+            column for column in requested_columns if column not in df.columns
+        ]
+        if unknown_columns:
+            return fail(
+                output_format,
+                "profile",
+                f"Unknown column(s) in --columns: {', '.join(sorted(unknown_columns))}",
+                2,
+            )
+
+    if max_columns is not None and max_columns < 1:
+        return fail(
+            output_format,
+            "profile",
+            f"Invalid --max-columns: {max_columns}. Use a positive integer.",
+            2,
+        )
+
+    # Sempre na ordem do dataset, mesmo que --columns tenha sido informado numa
+    # ordem diferente — mantém a saída determinística (spec 019).
+    if requested_columns is None:
+        columns_to_profile = list(df.columns)
+    else:
+        columns_to_profile = [
+            column for column in df.columns if column in requested_columns
+        ]
+
+    truncated_columns = []
+    if max_columns is not None and len(columns_to_profile) > max_columns:
+        truncated_columns = columns_to_profile[max_columns:]
+        columns_to_profile = columns_to_profile[:max_columns]
+
+    result = compute_profile(df, key_columns=key_columns, columns=columns_to_profile)
+    log.info(
+        "profiling — %s colunas (%s truncadas)",
+        result["columns"],
+        len(truncated_columns),
+    )
 
     if output_format == OutputFormat.JSON:
         by_key = None
@@ -140,15 +201,23 @@ def profile(filename, key, output_format=OutputFormat.TEXT, sep=None, encoding=N
                 "key_columns": result["key_columns"],
                 "count": result["duplicates_by_key"],
             }
+        extra_fields = {}
+        if truncated_columns:
+            extra_fields = {
+                "columns_returned": len(columns_to_profile),
+                "columns_total": len(columns_to_profile) + len(truncated_columns),
+                "truncated_columns": truncated_columns,
+            }
         print_json(
             "profile",
             status="ok",
             file=file_summary(filename, file_type, df),
             duplicates={"total": result["duplicates_total"], "by_key": by_key},
             columns=[
-                _column_profile_to_dict(column_profile)
+                _column_profile_to_dict(column_profile, redact_values)
                 for column_profile in result["column_profiles"]
             ],
+            **extra_fields,
         )
         return 0
 
@@ -174,6 +243,14 @@ def profile(filename, key, output_format=OutputFormat.TEXT, sep=None, encoding=N
         if column_profile.kind == "numeric":
             _print_numeric_stats(column_profile.stats)
         else:
-            _print_categorical_stats(column_profile.stats)
+            _print_categorical_stats(column_profile.stats, redact_values)
+
+    if truncated_columns:
+        print()
+        print(
+            f"{format_int_ptbr(len(truncated_columns))} colunas não exibidas "
+            f"(--max-columns {max_columns}). Use --columns para pedir colunas "
+            "específicas."
+        )
 
     return 0

@@ -1092,6 +1092,709 @@ class TestCleanColumns:
             assert not os.path.exists("saida.csv")
 
 
+class TestCleanNormalizeDocuments:
+    def test_example_files_show_invalid_cpf_diagnostics(self, runner):
+        result = runner.invoke(app, ["clean", "examples/clientes.csv"])
+        assert result.exit_code == 0
+        assert "CPFs com dígito verificador inválido" in result.stdout
+
+        result = runner.invoke(app, ["clean", "examples/clientes_sujos.csv"])
+        assert result.exit_code == 0
+        assert "19 CPFs com dígito verificador inválido" in result.stdout
+
+    def test_info_shows_document_diagnostics(self, runner):
+        result = runner.invoke(app, ["info", "examples/clientes.csv"])
+        assert result.exit_code == 0
+        assert "CPFs com dígito verificador inválido" in result.stdout
+
+    def test_does_not_confuse_phone_column_with_document(self, runner):
+        result = runner.invoke(app, ["clean", "examples/clientes_sujos.csv"])
+        assert result.exit_code == 0
+        assert "telefone" not in result.stdout.split("cpf")[0].split("nome")[-1] or (
+            "telefone\n  3 formatos diferentes" in result.stdout
+        )
+        # a coluna "telefone" só deve trazer a variação de formato já existente
+        # (spec 005), nunca um finding de documento
+        telefone_section = result.stdout.split('telefone\n')[1].split("\n\n")[0]
+        assert "CPF" not in telefone_section
+        assert "CNPJ" not in telefone_section
+
+    def test_does_not_confuse_sequential_id_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("id,nome\n" + "".join(f"{i},P{i}\n" for i in range(1, 21)))
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "CPF" not in result.stdout
+            assert "CNPJ" not in result.stdout
+
+    def test_detects_by_column_name_even_when_all_invalid(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n" + "".join(f"{str(i).zfill(11)}\n" for i in range(1, 6)))
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "CPFs com dígito verificador inválido" in result.stdout
+
+    def test_detects_by_mask_without_name_hint(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "documento_cliente\n"
+                    "123.456.789-09\n"
+                    "529.982.247-25\n"
+                    "111.444.777-35\n"
+                    "853.022.220-01\n"
+                    "852.502.220-01\n"
+                )
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "CPF" in result.stdout
+
+    def test_all_same_digits_reported_separately_from_invalid_checksum(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "cpf\n"
+                    "111.111.111-11\n"
+                    "000.000.000-00\n"
+                    "123.456.789-00\n"
+                )
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "2 CPFs com todos os dígitos iguais" in result.stdout
+            assert "1 CPFs com dígito verificador inválido" in result.stdout
+
+    def test_valid_alphanumeric_cnpj_is_not_reported_invalid(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "cnpj\n"
+                    "12.ABC.345/01DE-35\n"
+                    "11.222.333/0001-81\n"
+                    "11.444.777/0001-61\n"
+                )
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "Nenhum problema encontrado" in result.stdout
+
+    def test_out_of_format_and_mixed_masking_reported(self, runner):
+        # 4 de 5 valores batem o formato (80%, o mínimo da amostra) — 2 com
+        # máscara, 2 sem — e "abc" fica fora do formato.
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "documento\n"
+                    "52998224725\n"
+                    "11144477735\n"
+                    "111.444.777-35\n"
+                    "529.982.247-25\n"
+                    "abc\n"
+                )
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "1 valores fora do formato de CPF/CNPJ" in result.stdout
+            assert "2 formatos diferentes (com e sem máscara)" in result.stdout
+
+    def test_mixed_cpf_and_cnpj_column_separates_messages(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "documento\n"
+                    "12345678000100\n"
+                    "12345678900\n"
+                )
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert result.exit_code == 0
+            assert "1 CNPJs com dígito verificador inválido" in result.stdout
+            assert "1 CPFs com dígito verificador inválido" in result.stdout
+
+    def test_normalize_digits_strips_mask_and_uppercases_cnpj(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cnpj\n12.abc.345/01de-35\n11.222.333/0001-81\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "digits",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "2 documentos normalizados" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "cnpj\n12ABC34501DE35\n11222333000181\n"
+
+    def test_normalize_masked_applies_mask_to_cpf_and_cnpj(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("documento\n52998224725\n11222333000181\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "masked",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == (
+                    "documento\n529.982.247-25\n11.222.333/0001-81\n"
+                )
+
+    def test_numeric_column_recovers_leading_zeros_as_text(self, runner):
+        with isolated_filesystem():
+            with open("dados.json", "w", encoding="utf8") as f:
+                f.write(
+                    json.dumps(
+                        [{"cpf": 529982247} for _ in range(1)]
+                        + [{"cpf": int(f"{i:011d}")} for i in range(1, 10)]
+                    )
+                )
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.json",
+                    "--normalize-documents",
+                    "digits",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                rows = f.read().splitlines()
+            assert rows[0] == "cpf"
+            # 529982247 tem 9 dígitos: os 2 zeros à esquerda voltam
+            assert rows[1] == "00529982247"
+            assert all(len(row) == 11 for row in rows[1:])
+
+    def test_normalizes_still_invalid_values_but_reports_them(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n123.456.789-00\n529.982.247-25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "digits",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "2 documentos normalizados" in result.stdout
+            assert (
+                "1 com dígito verificador inválido (formatados, mas continuam "
+                "inválidos)" in result.stdout
+            )
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "cpf\n12345678900\n52998224725\n"
+
+    def test_out_of_format_values_kept_and_reported(self, runner):
+        # 4 CPFs válidos + 1 fora do formato = 80% (o mínimo da amostra).
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "cpf\n"
+                    "529.982.247-25\n"
+                    "111.444.777-35\n"
+                    "853.022.220-01\n"
+                    "825.022.220-01\n"
+                    "nao-e-documento\n"
+                )
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "digits",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert (
+                "1 valores fora do formato de CPF/CNPJ, mantidos sem alteração"
+                in result.stdout
+            )
+            assert '"nao-e-documento"' in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                rows = f.read().splitlines()
+            assert rows[0] == "cpf"
+            assert rows[-1] == "nao-e-documento"
+            assert rows[1] == "52998224725"
+
+    def test_document_columns_restricts_target_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "cpf,cpf_backup\n"
+                    "529.982.247-25,529.982.247-25\n"
+                    "111.444.777-35,111.444.777-35\n"
+                )
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "digits",
+                    "--document-columns",
+                    "cpf",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == (
+                    "cpf,cpf_backup\n"
+                    "52998224725,529.982.247-25\n"
+                    "11144477735,111.444.777-35\n"
+                )
+
+    def test_unknown_document_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n529.982.247-25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "digits",
+                    "--document-columns",
+                    "naoexiste",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code != 0
+            assert "Unknown column(s) in --document-columns" in result.stdout
+            assert not os.path.exists("saida.csv")
+
+    def test_invalid_normalize_documents_value(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n529.982.247-25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "foo",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code != 0
+            assert "Invalid --normalize-documents" in result.stdout
+            assert not os.path.exists("saida.csv")
+
+    def test_no_document_column_found(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--normalize-documents", "digits"]
+            )
+            assert result.exit_code == 0
+            assert "Nenhuma coluna de documento encontrada" in result.stdout
+
+    def test_fix_types_ignores_document_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.json", "w", encoding="utf8") as f:
+                f.write(
+                    json.dumps(
+                        [{"cpf": f"{i:011d}"} for i in range(1, 10)]
+                        + [{"cpf": "52998224725"}]
+                    )
+                )
+
+            result = runner.invoke(app, ["clean", "dados.json", "--fix-types"])
+            assert result.exit_code == 0
+            assert "Nenhuma coluna numérica armazenada como texto" in result.stdout
+
+    def test_info_suggests_normalize_documents_on_format_variance(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n52998224725\n111.444.777-35\n")
+
+            result = runner.invoke(app, ["info", "dados.csv"])
+            assert result.exit_code == 0
+            assert "--normalize-documents masked" in result.stdout
+
+    def test_info_does_not_suggest_normalize_documents_for_invalid_checksum_alone(
+        self, runner
+    ):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n123.456.789-00\n529.982.247-25\n")
+
+            result = runner.invoke(app, ["info", "dados.csv"])
+            assert result.exit_code == 0
+            assert "--normalize-documents" not in result.stdout
+
+    def test_json_output_for_diagnostic_and_operation(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n123.456.789-00\n529.982.247-25\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv", "--format", "json"])
+            document = _load_json(result.stdout)
+            assert {
+                "category": "document_invalid",
+                "column": "cpf",
+                "count": 1,
+                "message": "1 CPFs com dígito verificador inválido",
+            } in document["problems"]
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "digits",
+                    "--output",
+                    "saida.csv",
+                    "--format",
+                    "json",
+                ],
+            )
+            document = _load_json(result.stdout)
+            assert document["operations"] == [
+                {
+                    "operation": "normalize_documents",
+                    "columns": [
+                        {
+                            "column": "cpf",
+                            "normalized": 2,
+                            "still_invalid_count": 1,
+                            "unrecognized_count": 0,
+                            "unrecognized_distinct": 0,
+                            "unrecognized_examples": [],
+                        }
+                    ],
+                }
+            ]
+
+    def test_log_does_not_contain_document_values(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf\n123.456.789-00\n529.982.247-25\n")
+
+            runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "masked",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
+                log = f.read()
+            assert "documentos normalizados" in log
+            for value in ("123.456.789-00", "529.982.247-25", "12345678900", "52998224725"):
+                assert value not in log
+
+
+class TestProfileColumnsFilter:
+    def test_columns_restricts_profiled_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,idade,cidade\nAna,30,POA\nBia,25,SP\n")
+
+            result = runner.invoke(
+                app, ["profile", "dados.csv", "--columns", "cidade,nome"]
+            )
+            assert result.exit_code == 0
+            # ordem do dataset, não a ordem passada em --columns
+            assert result.stdout.index('Coluna "nome"') < result.stdout.index(
+                'Coluna "cidade"'
+            )
+            assert 'Coluna "idade"' not in result.stdout
+
+    def test_columns_keeps_dataset_wide_duplicate_count(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,idade\nAna,30\nAna,30\nBia,25\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--columns", "nome"])
+            assert result.exit_code == 0
+            assert "Linhas duplicadas: 1" in result.stdout
+
+    def test_unknown_column_in_columns_filter(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n")
+
+            result = runner.invoke(
+                app, ["profile", "dados.csv", "--columns", "naoexiste"]
+            )
+            assert result.exit_code != 0
+            assert "Unknown column(s) in --columns" in result.stdout
+
+    def test_max_columns_truncates_in_dataset_order(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a,b,c,d\n1,2,3,4\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--max-columns", "2"])
+            assert result.exit_code == 0
+            assert 'Coluna "a"' in result.stdout
+            assert 'Coluna "b"' in result.stdout
+            assert 'Coluna "c"' not in result.stdout
+            assert 'Coluna "d"' not in result.stdout
+            assert "2 colunas não exibidas (--max-columns 2)" in result.stdout
+
+    def test_max_columns_json_shape(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a,b,c,d\n1,2,3,4\n")
+
+            result = runner.invoke(
+                app,
+                ["profile", "dados.csv", "--max-columns", "2", "--format", "json"],
+            )
+            document = _load_json(result.stdout)
+            assert len(document["columns"]) == 2
+            assert document["columns_returned"] == 2
+            assert document["columns_total"] == 4
+            assert document["truncated_columns"] == ["c", "d"]
+
+    def test_without_max_columns_no_truncation_fields(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a,b\n1,2\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--format", "json"])
+            document = _load_json(result.stdout)
+            assert "columns_returned" not in document
+            assert "truncated_columns" not in document
+            assert len(document["columns"]) == 2
+
+    def test_invalid_max_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a\n1\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--max-columns", "0"])
+            assert result.exit_code != 0
+            assert "Invalid --max-columns" in result.stdout
+
+    def test_columns_and_max_columns_combinable_with_key(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cpf,nome,idade\n1,Ana,30\n1,Ana,30\n2,Bia,25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "profile",
+                    "dados.csv",
+                    "--key",
+                    "cpf",
+                    "--columns",
+                    "nome,idade",
+                    "--max-columns",
+                    "1",
+                    "--format",
+                    "json",
+                ],
+            )
+            document = _load_json(result.stdout)
+            assert document["duplicates"]["by_key"] == {
+                "key_columns": ["cpf"],
+                "count": 1,
+            }
+            assert [c["name"] for c in document["columns"]] == ["nome"]
+            assert document["truncated_columns"] == ["idade"]
+
+
+class TestRedactValues:
+    def test_profile_text_redacts_top_values(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPOA\nPOA\nSP\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv", "--redact-values"])
+            assert result.exit_code == 0
+            assert "<valor 1>: 2 (66.67%)" in result.stdout
+            assert "<valor 2>: 1 (33.33%)" in result.stdout
+            assert "POA" not in result.stdout
+            assert "SP" not in result.stdout
+
+    def test_profile_json_redacts_top_values(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPOA\nPOA\nSP\n")
+
+            result = runner.invoke(
+                app, ["profile", "dados.csv", "--redact-values", "--format", "json"]
+            )
+            document = _load_json(result.stdout)
+            top_values = document["columns"][0]["stats"]["top_values"]
+            assert top_values == [
+                {
+                    "value": "<valor 1>",
+                    "count": 2,
+                    "percent": pytest.approx(66.67, abs=0.01),
+                },
+                {
+                    "value": "<valor 2>",
+                    "count": 1,
+                    "percent": pytest.approx(33.33, abs=0.01),
+                },
+            ]
+
+    def test_profile_without_redact_shows_real_values(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPOA\nPOA\nSP\n")
+
+            result = runner.invoke(app, ["profile", "dados.csv"])
+            assert "POA: 2" in result.stdout
+
+    def test_case_inconsistency_becomes_summary_in_text_when_redacted(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPorto Alegre\nPORTO ALEGRE\nporto alegre\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv", "--redact-values"])
+            assert result.exit_code == 0
+            assert "3 variações de capitalização" in result.stdout
+            assert "Porto Alegre" not in result.stdout.split("cidade\n")[1]
+            assert "PORTO ALEGRE" not in result.stdout
+
+    def test_case_inconsistency_without_redact_lists_variants_in_text(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPorto Alegre\nPORTO ALEGRE\nporto alegre\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv"])
+            assert '"PORTO ALEGRE"' in result.stdout
+
+    def test_case_inconsistency_json_omits_examples_when_redacted(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("cidade\nPorto Alegre\nPORTO ALEGRE\nporto alegre\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--redact-values", "--format", "json"]
+            )
+            document = _load_json(result.stdout)
+            [problem] = document["problems"]
+            assert problem["message"] == "3 variações de capitalização"
+            assert "examples" not in problem
+
+            result = runner.invoke(app, ["clean", "dados.csv", "--format", "json"])
+            document = _load_json(result.stdout)
+            [problem] = document["problems"]
+            assert "examples" in problem
+
+    def test_info_diagnostic_redacted(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n" + "Ana\n" * 5 + "Ana\n")
+
+            result = runner.invoke(app, ["info", "dados.csv", "--redact-values"])
+            assert result.exit_code == 0
+
+    def test_clean_operation_text_hides_examples_when_redacted(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("d\n2020-01-01\n2020-01-02\n2020-01-03\nontem\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-dates",
+                    "--redact-values",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            assert "(valores ocultos por --redact-values)" in result.stdout
+            assert '"ontem"' not in result.stdout
+
+    def test_clean_operation_json_empties_examples_when_redacted(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("d\n2020-01-01\n2020-01-02\n2020-01-03\nontem\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-dates",
+                    "--redact-values",
+                    "--output",
+                    "saida.csv",
+                    "--format",
+                    "json",
+                ],
+            )
+            document = _load_json(result.stdout)
+            [operation] = document["operations"]
+            [column_report] = operation["columns"]
+            assert column_report["unrecognized_examples"] == []
+            assert column_report["unrecognized_distinct"] == 1
+            assert column_report["unrecognized_count"] == 1
+
+    def test_redact_values_does_not_affect_output_file(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nPorto Alegre\nPORTO ALEGRE\n")
+
+            runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--trim",
+                    "--redact-values",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome\nPorto Alegre\nPORTO ALEGRE\n"
+
+
 def _load_json(stdout):
     def reject_constant(name):
         raise ValueError(f"invalid JSON constant: {name}")

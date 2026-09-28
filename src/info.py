@@ -4,7 +4,7 @@ import os
 
 try:
     from execution_log import log
-    from quality import analyze, finding_to_dict, format_int_ptbr
+    from quality import analyze, display_message, finding_to_dict, format_int_ptbr
     from reporting import fail, file_summary, print_json
     from structures import (
         OutputFormat,
@@ -14,7 +14,7 @@ try:
     )
 except ImportError:
     from .execution_log import log
-    from .quality import analyze, finding_to_dict, format_int_ptbr
+    from .quality import analyze, display_message, finding_to_dict, format_int_ptbr
     from .reporting import fail, file_summary, print_json
     from .structures import (
         OutputFormat,
@@ -28,7 +28,20 @@ _SUGGESTIONS = [
     ("duplicates", "Remover duplicidades", "--remove-duplicates"),
     ("dates", "Normalizar datas", "--normalize-dates"),
     ("nulls", "Tratar valores nulos", "--drop-null"),
+    ("documents", "Normalizar documentos", "--normalize-documents masked"),
 ]
+
+# Categorias de Finding que disparam cada sugestão, quando diferem do nome da
+# própria sugestão (ex.: "documents" não é uma categoria de Finding — é
+# disparada por qualquer uma das duas abaixo).
+_SUGGESTION_TRIGGERS = {
+    "documents": ("document_format_variance", "document_numeric_column"),
+}
+
+
+def _suggestion_triggered(category, categories_found):
+    triggers = _SUGGESTION_TRIGGERS.get(category, (category,))
+    return any(trigger in categories_found for trigger in triggers)
 
 
 def _format_size(num_bytes):
@@ -41,7 +54,13 @@ def _format_size(num_bytes):
         size /= 1024
 
 
-def info(filename, output_format=OutputFormat.TEXT, sep=None, encoding=None):
+def info(
+    filename,
+    output_format=OutputFormat.TEXT,
+    sep=None,
+    encoding=None,
+    redact_values=False,
+):
     # Verificar a existência e a validade do arquivo de entrada
     if not os.path.exists(filename):
         return fail(
@@ -89,7 +108,7 @@ def info(filename, output_format=OutputFormat.TEXT, sep=None, encoding=None):
     suggestions = [
         (category, label, flag)
         for category, label, flag in _SUGGESTIONS
-        if category in categories_found
+        if _suggestion_triggered(category, categories_found)
     ]
 
     if output_format == OutputFormat.JSON:
@@ -97,7 +116,9 @@ def info(filename, output_format=OutputFormat.TEXT, sep=None, encoding=None):
             "info",
             status="ok",
             file=file_summary(filename, file_type, df),
-            problems=[finding_to_dict(finding) for finding in findings],
+            problems=[
+                finding_to_dict(finding, redact_values) for finding in findings
+            ],
             suggestions=[
                 {
                     "category": category,
@@ -121,7 +142,7 @@ def info(filename, output_format=OutputFormat.TEXT, sep=None, encoding=None):
 
     print("Problemas encontrados:")
     for finding in findings:
-        print(f"  ⚠ {finding.message}")
+        print(f"  ⚠ {display_message(finding, redact_values)}")
     print()
 
     print("Sugestões:")
