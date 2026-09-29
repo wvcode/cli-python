@@ -31,24 +31,45 @@ def _default(value):
     return str(value)
 
 
-def print_json(command, **fields):
+def print_document(document):
+    """Imprime um documento já montado (por `build_document`/`build_error`),
+    sem reconstruí-lo — evita sanitizar duas vezes quem já tem o dict pronto
+    (ex.: para devolver o mesmo dict ao chamador, como o servidor MCP de 020)."""
+    print(json.dumps(document, ensure_ascii=False, indent=2, default=_default))
+
+
+def build_document(command, **fields):
+    """Monta e sanitiza o envelope JSON (schema_version/command + campos), sem
+    imprimir — usado por `print_json` (CLI) e por quem precisa do dict direto
+    (ex.: o servidor MCP de 020, que não pode escrever no stdout do CLI)."""
     document = {"schema_version": SCHEMA_VERSION, "command": command, **fields}
-    print(
-        json.dumps(_sanitize(document), ensure_ascii=False, indent=2, default=_default)
+    return _sanitize(document)
+
+
+def print_json(command, **fields):
+    print_document(build_document(command, **fields))
+
+
+def build_error(command, message, exit_code):
+    return build_document(
+        command, status="error", error={"exit_code": exit_code, "message": message}
     )
 
 
 def fail(output_format, command, message, exit_code):
+    """Reporta um erro no formato certo e devolve `(exit_code, document)`.
+
+    `document` é o dict do erro em modo JSON, `None` em modo texto — mesma
+    convenção de `info()`/`profile()`/`clean()`/`convert()`.
+    """
     log.error(message)
+    document = None
     if output_format == OutputFormat.JSON:
-        print_json(
-            command,
-            status="error",
-            error={"exit_code": exit_code, "message": message},
-        )
+        document = build_error(command, message, exit_code)
+        print_document(document)
     else:
         print(message)
-    return exit_code
+    return exit_code, document
 
 
 def file_summary(filename, file_type, df):

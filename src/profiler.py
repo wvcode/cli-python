@@ -6,7 +6,7 @@ try:
     from execution_log import log
     from profiling import profile as compute_profile
     from quality import format_int_ptbr
-    from reporting import fail, file_summary, print_json
+    from reporting import build_document, fail, file_summary, print_document
     from structures import (
         OutputFormat,
         csv_options_error,
@@ -17,7 +17,7 @@ except ImportError:
     from .execution_log import log
     from .profiling import profile as compute_profile
     from .quality import format_int_ptbr
-    from .reporting import fail, file_summary, print_json
+    from .reporting import build_document, fail, file_summary, print_document
     from .structures import (
         OutputFormat,
         csv_options_error,
@@ -208,7 +208,7 @@ def profile(
                 "columns_total": len(columns_to_profile) + len(truncated_columns),
                 "truncated_columns": truncated_columns,
             }
-        print_json(
+        document = build_document(
             "profile",
             status="ok",
             file=file_summary(filename, file_type, df),
@@ -219,7 +219,8 @@ def profile(
             ],
             **extra_fields,
         )
-        return 0
+        print_document(document)
+        return 0, document
 
     print(f"Arquivo: {filename}")
     print(f"Linhas: {format_int_ptbr(result['rows'])}")
@@ -253,4 +254,4 @@ def profile(
             "específicas."
         )
 
-    return 0
+    return 0, None

@@ -23,7 +23,7 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 | 017 | [Detectar delimitador e encoding de CSV, com log de execução](017-csv-delimitador-encoding.md) | Conversão + infra | Implementado | 001 |
 | 018 | [Validar e normalizar CPF/CNPJ](018-cpf-cnpj-validacao.md) | Cleaning | Implementado | 005, 010 |
 | 019 | [Saída estruturada em JSON](019-saida-json.md) | Diagnóstico/Profiling | Implementado | 002, 003, 005 |
-| 020 | [Servidor MCP sobre o CLI](020-mcp-server.md) | Integração (agentes) | Não implementado | 003, 017, 019 |
+| 020 | [Servidor MCP sobre o CLI](020-mcp-server.md) | Integração (agentes) | Implementado | 003, 017, 019 |
 
 ## MVP v0.1
 

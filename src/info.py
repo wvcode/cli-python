@@ -5,7 +5,7 @@ import os
 try:
     from execution_log import log
     from quality import analyze, display_message, finding_to_dict, format_int_ptbr
-    from reporting import fail, file_summary, print_json
+    from reporting import build_document, fail, file_summary, print_document
     from structures import (
         OutputFormat,
         csv_options_error,
@@ -15,7 +15,7 @@ try:
 except ImportError:
     from .execution_log import log
     from .quality import analyze, display_message, finding_to_dict, format_int_ptbr
-    from .reporting import fail, file_summary, print_json
+    from .reporting import build_document, fail, file_summary, print_document
     from .structures import (
         OutputFormat,
         csv_options_error,
@@ -112,13 +112,11 @@ def info(
     ]
 
     if output_format == OutputFormat.JSON:
-        print_json(
+        document = build_document(
             "info",
             status="ok",
             file=file_summary(filename, file_type, df),
-            problems=[
-                finding_to_dict(finding, redact_values) for finding in findings
-            ],
+            problems=[finding_to_dict(finding, redact_values) for finding in findings],
             suggestions=[
                 {
                     "category": category,
@@ -128,7 +126,8 @@ def info(
                 for category, label, flag in suggestions
             ],
         )
-        return 0
+        print_document(document)
+        return 0, document
 
     print(f"Arquivo: {filename}")
     print(f"Linhas: {format_int_ptbr(df.height)}")
@@ -138,7 +137,7 @@ def info(
 
     if not findings:
         print("Nenhum problema encontrado.")
-        return 0
+        return 0, None
 
     print("Problemas encontrados:")
     for finding in findings:
@@ -149,4 +148,4 @@ def info(
     for index, (_, label, flag) in enumerate(suggestions, start=1):
         print(f"  {index}. {label} → datatool clean {filename} {flag}")
 
-    return 0
+    return 0, None

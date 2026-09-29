@@ -3,7 +3,7 @@
 import os
 
 try:
-    from reporting import fail
+    from reporting import build_document, fail, file_summary
     from structures import (
         OutputFormat,
         csv_options_error,
@@ -12,7 +12,7 @@ try:
         save_file,
     )
 except ImportError:
-    from .reporting import fail
+    from .reporting import build_document, fail, file_summary
     from .structures import (
         OutputFormat,
         csv_options_error,
@@ -67,7 +67,7 @@ def convert(
     # Imprimir DataFrame para stdout se to_filename for None
     if to_filename is None:
         print(df)
-        return 0
+        return 0, None
 
     # Inferir o formato de saída pela extensão, se não informado
     if to_type is None:
@@ -96,4 +96,12 @@ def convert(
         print("Target saved")
         print(f"  - (rows, columns) = {df2.shape}")
 
-    return 0
+    # Documento interno (não é o `--format json` de 019, que este comando não
+    # tem): usado só pelo servidor MCP de 020, sem imprimir nada aqui.
+    document = build_document(
+        "convert",
+        status="ok",
+        source=file_summary(filename, from_type, df),
+        target=file_summary(to_filename, to_type, df),
+    )
+    return 0, document

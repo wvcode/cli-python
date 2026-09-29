@@ -21,7 +21,7 @@ try:
         finding_to_dict,
         format_int_ptbr,
     )
-    from reporting import fail, file_summary, print_json
+    from reporting import build_document, fail, file_summary, print_document
     from structures import (
         OutputFormat,
         csv_options_error,
@@ -44,7 +44,7 @@ except ImportError:
         finding_to_dict,
         format_int_ptbr,
     )
-    from .reporting import fail, file_summary, print_json
+    from .reporting import build_document, fail, file_summary, print_document
     from .structures import (
         OutputFormat,
         csv_options_error,
@@ -694,7 +694,7 @@ def _write_output(df, output, output_type, output_format):
             1,
         )
 
-    return 0
+    return 0, None
 
 
 def clean(
@@ -791,7 +791,7 @@ def clean(
             ", ".join(sorted({finding.category for finding in findings})) or "nenhum",
         )
         if is_json:
-            print_json(
+            document = build_document(
                 "clean",
                 status="ok",
                 file=input_summary,
@@ -799,9 +799,10 @@ def clean(
                     finding_to_dict(finding, redact_values) for finding in findings
                 ],
             )
-        else:
-            _print_diagnostics(filename, df, findings, redact_values)
-        return 0
+            print_document(document)
+            return 0, document
+        _print_diagnostics(filename, df, findings, redact_values)
+        return 0, None
 
     reports = []
     try:
@@ -866,7 +867,7 @@ def clean(
 
     if output is None:
         print(df)
-        return 0
+        return 0, None
 
     output_type = infer_file_type(output)
     if output_type is None:
@@ -878,16 +879,18 @@ def clean(
             2,
         )
 
-    result = _write_output(df, output, output_type, output_format)
-    if result:
-        return result
+    write_exit_code, write_document = _write_output(
+        df, output, output_type, output_format
+    )
+    if write_exit_code:
+        return write_exit_code, write_document
 
     if is_json:
         if redact_values:
             operations = [_redact_report(report) for report in reports]
         else:
             operations = reports
-        print_json(
+        document = build_document(
             "clean",
             status="ok",
             file=input_summary,
@@ -899,4 +902,6 @@ def clean(
                 "columns": df.width,
             },
         )
-    return 0
+        print_document(document)
+        return 0, document
+    return 0, None

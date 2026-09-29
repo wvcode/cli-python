@@ -88,7 +88,7 @@ def convert(
     sep: SepOption = None,
     encoding: EncodingOption = None,
 ):
-    result = file_convert(
+    result, _document = file_convert(
         filename, from_type, to_type, to_filename, show_stats, sep, encoding
     )
     if result > 0:
@@ -107,7 +107,7 @@ def info(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
 ):
-    result = file_info(filename, output_format, sep, encoding, redact_values)
+    result, _document = file_info(filename, output_format, sep, encoding, redact_values)
     if result > 0:
         raise typer.Exit(code=result)
 
@@ -142,7 +142,7 @@ def profile(
     ] = None,
     redact_values: RedactValuesOption = False,
 ):
-    result = file_profile(
+    result, _document = file_profile(
         filename,
         key,
         output_format,
@@ -227,7 +227,7 @@ def clean(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
 ):
-    result = file_clean(
+    result, _document = file_clean(
         filename,
         trim,
         lowercase,

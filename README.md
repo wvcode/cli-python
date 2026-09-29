@@ -6,7 +6,7 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`, validação de CPF/CNPJ
+- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`, validação de CPF/CNPJ, servidor MCP (`datatool-mcp`) para agentes de IA
 - **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
@@ -31,6 +31,12 @@ Para desenvolvimento (testes e lint):
 
 ```bash
 pip install -r requirements-dev.txt
+```
+
+Para o servidor MCP (usado por agentes de IA — ver [seção própria](#servidor-mcp-datatool-mcp)):
+
+```bash
+pip install -e ".[mcp]"
 ```
 
 ## Comandos disponíveis
@@ -367,6 +373,27 @@ datatool clean clientes.csv --redact-values
 - No diagnóstico, a inconsistência de capitalização passa a mostrar só a contagem (`"3 variações de capitalização"`), em vez de listar as variantes
 - Nas operações do `clean` (`--normalize-dates`, `--fix-types`, `--normalize-documents`), os valores não reconhecidos somem da lista — fica só a contagem e `(valores ocultos por --redact-values)`
 - Nunca muda o arquivo gravado por `--output`, só o que é impresso ou volta em `--format json`
+
+### Servidor MCP (`datatool-mcp`)
+
+Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como ferramentas [MCP](https://modelcontextprotocol.io/) para um agente de IA (Claude Code, Claude Desktop, Cursor, ...) chamar diretamente, em vez de escrever código de análise do zero a cada conversa. Requer `pip install -e ".[mcp]"` (ver [Instalação](#instalação)) — quem só usa o CLI não precisa dessa dependência.
+
+```json
+{
+  "mcpServers": {
+    "datatool": {
+      "command": "datatool-mcp",
+      "args": ["--root", "/caminho/do/projeto"]
+    }
+  }
+}
+```
+
+- Ferramentas: `datatool_info`, `datatool_profile` (+ `columns`/`max_columns`, padrão 50), `datatool_clean_diagnose`, `datatool_clean_apply` (grava em `output`) e `datatool_convert` (grava em `to_filename`) — cada uma devolve o mesmo JSON de [`--format json`](#saída-em-json---format-json)
+- Todo caminho de arquivo fica restrito ao diretório passado em `--root`; `output`/`to_filename` nunca pode ser o mesmo arquivo da entrada, e uma saída já existente exige `overwrite: true`
+- `redact_values` vem **ligado por padrão** nas ferramentas (diferente do CLI, onde vem desligado): os valores de célula não trafegam para o modelo de IA a menos que a pessoa configure a ferramenta com `redact_values: false`
+- Cada chamada é registrada em `logs/datatool.log` (relativo ao `--root`), com o nome prefixado (`mcp info`, `mcp clean`, ...)
+- Só ferramentas Community por enquanto — o detalhamento completo está em [specs/020-mcp-server.md](specs/020-mcp-server.md)
 
 ### Em desenvolvimento
 

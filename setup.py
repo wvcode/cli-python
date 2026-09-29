@@ -27,11 +27,17 @@ setuptools.setup(
         "fastexcel",
         "xlsxwriter",
     ],
+    extras_require={
+        # Servidor MCP (spec 020) — dependência pesada (uvicorn, pydantic,
+        # cryptography, ...) que só quem usa agentes de IA precisa instalar.
+        "mcp": ["mcp"],
+    },
     packages=setuptools.find_packages(),
     python_requires=">=3.10",
     entry_points={
         "console_scripts": [
             "datatool = src.main:app",
+            "datatool-mcp = src.mcp_server:main",
         ]
     },
 )
