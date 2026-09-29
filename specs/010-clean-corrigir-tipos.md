@@ -6,7 +6,7 @@ Como analista de dados, eu quero que colunas numéricas armazenadas como texto s
 ## Contexto
 Exemplo citado na ideia: coluna "Valor" contendo `R$` e separadores brasileiros (`1.234,56`).
 
-Implementado em [src/clean.py](../src/clean.py), como mais uma flag de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)–[009](009-clean-normalizar-datas.md)). É a correção sugerida pelo `info` ([002](002-info-diagnostico.md)) quando detecta colunas numéricas armazenadas como texto.
+Implementado em [src/datatool/clean.py](../src/datatool/clean.py), como mais uma flag de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)–[009](009-clean-normalizar-datas.md)). É a correção sugerida pelo `info` ([002](002-info-diagnostico.md)) quando detecta colunas numéricas armazenadas como texto.
 
 ## Interface proposta
 ```bash
@@ -20,7 +20,7 @@ datatool clean relatorio.xlsx --fix-types --decimal-separator ,
 - [x] Converte a coluna para tipo numérico apropriado (`int`/`float`)
 - [x] Reporta quais colunas foram convertidas e quantos valores falharam na conversão (sem interromper o processamento das demais)
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanFixTypes`).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanFixTypes`).
 
 ## Nota de implementação
 - Detecção: colunas de texto (`Utf8`) em que ≥ 90% de uma amostra de até 2.000 valores não nulos é numérica — mesmos limiares usados pelo `info` para o diagnóstico "armazenada como texto mas parece numérica". Sem nenhuma coluna candidata, imprime `Nenhuma coluna numérica armazenada como texto encontrada` e segue.

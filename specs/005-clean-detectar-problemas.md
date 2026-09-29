@@ -6,7 +6,7 @@ Como analista de dados, eu quero rodar `clean` sem nenhuma flag e ver um relató
 ## Contexto
 Camada 3 da ideia ("Data cleaning"), primeiro passo antes de aplicar qualquer transformação destrutiva.
 
-Implementado em [src/clean.py](../src/clean.py) (leitura + impressão, no mesmo padrão de [src/info.py](../src/info.py)) e nos detectores adicionados a [src/quality.py](../src/quality.py) (`detect_invalid_emails`, `detect_phone_format_variance`, `detect_leading_trailing_whitespace`, `detect_key_duplicates`, `detect_case_inconsistency`, orquestrados por `analyze_clean`).
+Implementado em [src/datatool/clean.py](../src/datatool/clean.py) (leitura + impressão, no mesmo padrão de [src/datatool/info.py](../src/datatool/info.py)) e nos detectores adicionados a [src/datatool/quality.py](../src/datatool/quality.py) (`detect_invalid_emails`, `detect_phone_format_variance`, `detect_leading_trailing_whitespace`, `detect_key_duplicates`, `detect_case_inconsistency`, orquestrados por `analyze_clean`).
 
 ## Interface proposta
 ```bash
@@ -19,7 +19,7 @@ Saída no formato do exemplo da ideia (problema por coluna: e-mails inválidos, 
 - [x] Lista por coluna: valores inválidos (ex.: formato de e-mail), variação de formatos (ex.: telefone), espaços extras nas bordas, duplicidade por chave, inconsistência de capitalização
 - [x] Formato de saída consistente com [002-info-diagnostico](002-info-diagnostico.md) (mesmo cabeçalho `Arquivo`/`Linhas`/`Colunas`)
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanCommand`). Testado manualmente com 200 mil linhas (~0,3s).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanCommand`). Testado manualmente com 200 mil linhas (~0,3s).
 
 ## Nota de implementação — heurísticas
 Todas de conteúdo (não dependem do nome da coluna), consistente com as heurísticas de [002](002-info-diagnostico.md)/[003](003-profile-estatistico.md):

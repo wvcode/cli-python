@@ -4,7 +4,7 @@
 Como analista/engenheiro de dados, eu quero converter um arquivo de um formato para outro, para poder usar o formato mais adequado em cada ferramenta ou pipeline.
 
 ## Contexto
-Implementado em [src/convert.py](../src/convert.py) e [src/structures/functions.py](../src/structures/functions.py), usando polars para ler/gravar os formatos suportados. Além dos formatos pedidos na ideia (CSV, JSON, JSONL, Excel, Parquet, SQLite), a implementação também mantém Feather e Avro, que já existiam no código antes desta spec.
+Implementado em [src/datatool/convert.py](../src/datatool/convert.py) e [src/datatool/structures/functions.py](../src/datatool/structures/functions.py), usando polars para ler/gravar os formatos suportados. Além dos formatos pedidos na ideia (CSV, JSON, JSONL, Excel, Parquet, SQLite), a implementação também mantém Feather e Avro, que já existiam no código antes desta spec.
 
 Leitura/gravação de SQLite usa o módulo `sqlite3` da stdlib (sem dependência extra): o nome da tabela é derivado do nome do arquivo (`vendas.sqlite` → tabela `vendas`); na leitura, se esse nome não existir mas o banco tiver exatamente uma tabela, essa tabela é usada. Excel usa `fastexcel`/`xlsxwriter` via polars (adicionados em `requirements.txt`/`setup.py`).
 
@@ -21,7 +21,7 @@ datatool convert vendas.xlsx vendas.csv
 - [x] Arquivo inexistente, formato não suportado ou diretório sem permissão de escrita retornam mensagem clara e exit code != 0
 - [x] `--show-stats` imprime (linhas, colunas) da origem e do destino
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestConvertCommand`), incluindo round-trip sem perda de dados para cada formato.
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestConvertCommand`), incluindo round-trip sem perda de dados para cada formato.
 
 ## Fora de escopo
 - Transformação de dados durante a conversão (isso é responsabilidade das specs de `clean`)

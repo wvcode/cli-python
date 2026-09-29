@@ -4,7 +4,7 @@
 Como analista de dados, eu quero remover registros duplicados, para garantir que cada entidade apareça uma única vez no dataset.
 
 ## Contexto
-Implementado em [src/clean.py](../src/clean.py), como mais uma flag de operação do comando `clean` (junto das de [006-clean-operadores-string](006-clean-operadores-string.md)). `--key` reaproveita o mesmo parsing/validação de coluna-chave do `--key` de [003-profile-estatistico](003-profile-estatistico.md).
+Implementado em [src/datatool/clean.py](../src/datatool/clean.py), como mais uma flag de operação do comando `clean` (junto das de [006-clean-operadores-string](006-clean-operadores-string.md)). `--key` reaproveita o mesmo parsing/validação de coluna-chave do `--key` de [003-profile-estatistico](003-profile-estatistico.md).
 
 ## Interface proposta
 ```bash
@@ -18,7 +18,7 @@ datatool clean clientes.csv --remove-duplicates --key cpf
 - [x] Reporta a quantidade de linhas removidas
 - [x] Mantém a primeira ocorrência por padrão (comportamento documentado)
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanRemoveDuplicates`).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanRemoveDuplicates`).
 
 ## Nota de implementação
 - Implementado com `df.unique(subset=key_columns, keep="first", maintain_order=True)` — mantém a primeira ocorrência e preserva a ordem original das linhas remanescentes.

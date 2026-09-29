@@ -6,7 +6,7 @@ Como analista de dados, eu quero normalizar colunas de data que estão em format
 ## Contexto
 Exemplo citado na ideia: `data_nascimento` com 18 formatos diferentes.
 
-Implementado em [src/clean.py](../src/clean.py), como mais uma flag de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)/[007](007-clean-remover-duplicidades.md)/[008](008-clean-tratar-nulos.md)). É a correção sugerida pelo `info` ([002](002-info-diagnostico.md)) quando detecta colunas com múltiplos formatos de data.
+Implementado em [src/datatool/clean.py](../src/datatool/clean.py), como mais uma flag de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)/[007](007-clean-remover-duplicidades.md)/[008](008-clean-tratar-nulos.md)). É a correção sugerida pelo `info` ([002](002-info-diagnostico.md)) quando detecta colunas com múltiplos formatos de data.
 
 ## Interface proposta
 ```bash
@@ -20,7 +20,7 @@ datatool clean clientes.csv --normalize-dates --date-columns data_nascimento,dat
 - [x] Converte todos os valores reconhecidos para ISO 8601 (`yyyy-mm-dd`)
 - [x] Valores não reconhecíveis são reportados na saída, não descartados silenciosamente
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanNormalizeDates`).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanNormalizeDates`).
 
 ## Nota de implementação
 - Formatos reconhecidos (via `datetime.strptime`, que também aceita dia/mês com 1 dígito): `yyyy-mm-dd`, `yyyy/mm/dd`, `yyyy.mm.dd`, `yyyy-mm-ddThh:mm:ss`/`yyyy-mm-dd hh:mm:ss` (a hora é descartada), `dd/mm/yyyy`, `dd-mm-yyyy`, `dd.mm.yyyy`, `dd/mm/yy`, `dd-mm-yy` e as variantes `mm/dd` dos cinco últimos. `yyyymmdd` **não** é reconhecido de propósito: é indistinguível de códigos numéricos de 8 dígitos e o `strptime` aceita valores de 7 dígitos de forma ambígua.

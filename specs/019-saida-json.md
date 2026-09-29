@@ -9,8 +9,8 @@ Origem: item [F03 do backlog](backlog-novas-features.md#f03--saída-estruturada-
 Hoje os três comandos só imprimem texto em pt-BR, com números formatados (`1.234`), `⚠`, sugestões numeradas e mensagens intercaladas com a tabela do DataFrame. Parsear isso é frágil: qualquer ajuste de texto quebra quem consome.
 
 O trabalho pesado já está feito e separado da impressão:
-- [src/profiling.py](../src/profiling.py) devolve um dicionário com `ColumnProfile`s;
-- [src/quality.py](../src/quality.py) devolve `Finding`s (`category`, `message`, `column`, `count`).
+- [src/datatool/profiling.py](../src/datatool/profiling.py) devolve um dicionário com `ColumnProfile`s;
+- [src/datatool/quality.py](../src/datatool/quality.py) devolve `Finding`s (`category`, `message`, `column`, `count`).
 
 Esta spec transforma isso num **formato público e versionado**. Ele desbloqueia outras specs, que precisam de uma entrada estruturada:
 - relatório HTML ([004](004-profile-relatorio-html.md));
@@ -188,7 +188,7 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 - [x] `--format` com valor diferente de `text`/`json` é rejeitado pelo CLI com exit code != 0
 - [x] O formato está documentado no README (exemplos de `info`, `profile` e `clean`) e nesta spec
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestJsonOutput`). A saída em texto foi comparada com a versão anterior à spec (`info`, `profile` e `clean` nos arquivos de [examples/](../examples/), com e sem operações, e nos caminhos de erro) e é idêntica.
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestJsonOutput`). A saída em texto foi comparada com a versão anterior à spec (`info`, `profile` e `clean` nos arquivos de [examples/](../examples/), com e sem operações, e nos caminhos de erro) e é idêntica.
 
 ## Extensão — ocultar valores de células (`--redact-values`)
 Adicionada ao planejar [020-mcp-server](020-mcp-server.md): o JSON de `profile` (`top_values`) e alguns campos de `clean`/`info` (`case_inconsistency.examples`, `unrecognized_examples`, `failed_examples`) trazem valores reais das células. Isso é o esperado para uso direto — a própria pessoa lendo o próprio arquivo — mas quando esse JSON alimenta um agente de IA, os valores passam a trafegar para um segundo destinatário (o provedor do modelo), o que pede uma forma de desligar isso sem perder as contagens. A flag é do `info`/`profile`/`clean` (útil também fora do MCP — ex.: colar a saída de `clean` num ticket de suporte sem vazar dado do cliente), e o servidor MCP de [020](020-mcp-server.md) só muda o padrão dela para `True` nas próprias chamadas.
@@ -206,10 +206,10 @@ datatool clean clientes.csv --redact-values
 - [x] Nada além de valores de célula é afetado: nomes de coluna, contagens, caminhos de arquivo e tipos continuam aparecendo normalmente
 - [x] `--redact-values` nunca muda o arquivo gravado por `--output` — afeta só o relatório impresso/retornado
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestRedactValues`). O comportamento padrão (`--redact-values` omitido) foi comparado com a versão anterior à extensão e é idêntico.
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestRedactValues`). O comportamento padrão (`--redact-values` omitido) foi comparado com a versão anterior à extensão e é idêntico.
 
 #### Nota de implementação
-- [src/quality.py](../src/quality.py) ganhou `display_message(finding, redact_values)`, usada por `info`/`clean` no modo texto no lugar de `finding.message` direto — só muda o resultado para `case_inconsistency`, reaproveitando o mesmo resumo (`_case_inconsistency_summary`) que `finding_to_dict` já calculava para o JSON. `finding_to_dict` ganhou o parâmetro `redact_values` (padrão `False`) para omitir `examples`.
+- [src/datatool/quality.py](../src/datatool/quality.py) ganhou `display_message(finding, redact_values)`, usada por `info`/`clean` no modo texto no lugar de `finding.message` direto — só muda o resultado para `case_inconsistency`, reaproveitando o mesmo resumo (`_case_inconsistency_summary`) que `finding_to_dict` já calculava para o JSON. `finding_to_dict` ganhou o parâmetro `redact_values` (padrão `False`) para omitir `examples`.
 - Em `clean.py`, a redação das operações (`normalize_dates`/`fix_types`/`normalize_documents`) é feita em dois pontos independentes, sem tocar `_apply_*`: `_print_examples(examples, distinct_count, redact_values)` imprime `"(valores ocultos por --redact-values)"` em vez da lista, no modo texto; `_redact_report(report)` devolve uma cópia do relatório com os campos de exemplo (`unrecognized_examples`/`failed_examples`) esvaziados, aplicada só ao montar o JSON final (`operations`). O relatório "cru" (com os valores reais) continua sendo o que roda internamente e o que vai para o log — que já os omitia antes desta extensão.
 - `--redact-values` não entra em `has_operations`: é um modificador de relatório, nunca conta como operação de dado, então `clean arquivo.csv --redact-values` sozinho continua caindo no modo diagnóstico.
 - Log: sem mudança — o log de [017](017-csv-delimitador-encoding.md) já nunca incluía exemplos de valor, com ou sem `--redact-values`.
@@ -223,19 +223,19 @@ Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestRedactValues`)
 - Exportar as linhas problemáticas de cada `problem`. É a extensão natural para quem precisa agir sobre os valores (ex.: CPFs inválidos de [018](018-cpf-cnpj-validacao.md)), mas envolve dados pessoais e merece uma decisão própria.
 
 ## Nota de implementação
-- Serialização e erros em [src/reporting.py](../src/reporting.py): `print_json` monta o envelope (`schema_version`, `command`) e trata `NaN`/`inf` e datas; `fail` imprime a mensagem de erro em texto ou em JSON e devolve o exit code. `--format` é o enum `OutputFormat` de [src/structures/output_format.py](../src/structures/output_format.py).
+- Serialização e erros em [src/datatool/reporting.py](../src/datatool/reporting.py): `print_json` monta o envelope (`schema_version`, `command`) e trata `NaN`/`inf` e datas; `fail` imprime a mensagem de erro em texto ou em JSON e devolve o exit code. `--format` é o enum `OutputFormat` de [src/datatool/structures/output_format.py](../src/datatool/structures/output_format.py).
 - No `clean`, cada `_apply_*` devolve `(df, relatório)`. Em modo texto, o relatório é impresso logo depois de cada operação, com as mesmas linhas de antes; em JSON, os relatórios são acumulados em `operations`.
 - `unrecognized_distinct`/`failed_distinct` foram acrescentados aos relatórios de `normalize_dates`/`fix_types` em relação ao desenho original: o modo texto precisa do número de valores distintos para imprimir `... e mais N valores`, e o campo também é útil no JSON.
 - Com `--format json` e operações sem `--output`, o erro é dado antes de ler o arquivo, sem processar nada.
 - **Pendência para [020-mcp-server](020-mcp-server.md):** `print_json`/`fail` hoje só imprimem; não devolvem o dict montado. O servidor MCP precisa do dict em Python, sem capturar stdout. Quando 020 for implementada, `print_json`/`fail` são divididos em `build_document`/`build_error` (montam e devolvem o dict) e uma casca fina que imprime; `info`/`profile`/`clean`/`convert` passam a devolver `(exit_code, document)`. É um refactor interno — não muda nenhuma saída do CLI nem os critérios desta spec, por isso o desenho fica descrito em 020, não aqui.
 
 ## Notas originais do desenho
-- **Separar cálculo de apresentação no `clean`.** Hoje cada `_apply_*` de [src/clean.py](../src/clean.py) faz `print` do próprio resumo. Eles passam a devolver `(df, relatório)`, em que o relatório é um dicionário no formato da tabela de `operations`. Um renderizador de texto produz exatamente as linhas de hoje, e um de JSON serializa a lista. [src/info.py](../src/info.py) e [src/profiler.py](../src/profiler.py) já calculam antes de imprimir; só precisam do ramo JSON.
+- **Separar cálculo de apresentação no `clean`.** Hoje cada `_apply_*` de [src/datatool/clean.py](../src/datatool/clean.py) faz `print` do próprio resumo. Eles passam a devolver `(df, relatório)`, em que o relatório é um dicionário no formato da tabela de `operations`. Um renderizador de texto produz exatamente as linhas de hoje, e um de JSON serializa a lista. [src/datatool/info.py](../src/datatool/info.py) e [src/datatool/profiler.py](../src/datatool/profiler.py) já calculam antes de imprimir; só precisam do ramo JSON.
 - **Mensagens de erro:** os pontos que hoje fazem `print(mensagem)` e `return código` passam a chamar um helper que imprime em texto ou em JSON, conforme o formato.
-- **`types`:** em `detect_numeric_as_text` ([src/quality.py](../src/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.
+- **`types`:** em `detect_numeric_as_text` ([src/datatool/quality.py](../src/datatool/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.
 - **`Finding`:** ganha um campo opcional `examples` (padrão vazio), usado só por `case_inconsistency`. A `message` de texto desse detector continua sendo montada como hoje, para não mudar o modo texto.
 - **Serialização:** `json.dumps(..., ensure_ascii=False, indent=2, default=...)`, com um `default` que trata `date`/`datetime` (ISO) e cai em `str()` para o resto. `NaN`/`inf` tratados antes (o `json` da stdlib gera `NaN`, que não é JSON válido).
-- **`--format`:** pode reaproveitar o padrão de `Enum` já usado em [src/structures/](../src/structures/) (`FileType`, `EncodingType`) para o Typer validar os valores.
+- **`--format`:** pode reaproveitar o padrão de `Enum` já usado em [src/datatool/structures/](../src/datatool/structures/) (`FileType`, `EncodingType`) para o Typer validar os valores.
 - **Log de [017](017-csv-delimitador-encoding.md):** não muda; o log continua sem valores de células mesmo quando o JSON do stdout os contém.
 
 ## Dependências

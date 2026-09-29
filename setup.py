@@ -15,6 +15,7 @@ setuptools.setup(
     project_urls={
         "Bug Tracker": "https://github.com/wvcode/cli-python/issues",
     },
+    license_files=["LICENSE"],
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",
@@ -32,12 +33,13 @@ setuptools.setup(
         # cryptography, ...) que só quem usa agentes de IA precisa instalar.
         "mcp": ["mcp"],
     },
-    packages=setuptools.find_packages(),
+    package_dir={"": "src"},
+    packages=setuptools.find_packages(where="src"),
     python_requires=">=3.10",
     entry_points={
         "console_scripts": [
-            "datatool = src.main:app",
-            "datatool-mcp = src.mcp_server:main",
+            "datatool = datatool.main:app",
+            "datatool-mcp = datatool.mcp_server:main",
         ]
     },
 )

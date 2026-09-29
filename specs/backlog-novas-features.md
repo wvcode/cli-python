@@ -52,7 +52,7 @@ datatool info vendas.csv --sep ";" --encoding latin-1   # override explícito
 - Tentar UTF-8; se falhar, cair para `cp1252`
 - Informar o que foi detectado quando diferir do padrão (`Delimitador detectado: ";"`)
 
-**Onde mexe.** Um wrapper de leitura de CSV em [src/structures/functions.py](../src/structures/functions.py) — todos os comandos se beneficiam sem mudar individualmente.
+**Onde mexe.** Um wrapper de leitura de CSV em [src/datatool/structures/functions.py](../src/datatool/structures/functions.py) — todos os comandos se beneficiam sem mudar individualmente.
 
 **Relação com o que existe.** O comando-esqueleto `dataset decode` (com `EncodingType`) parece ter sido pensado para isso; ver [reconciliação](#reconciliar-comandos-esqueleto).
 
@@ -95,7 +95,7 @@ datatool profile vendas.csv --format json > perfil.json
 datatool info vendas.csv --format json | jq '.problems[] | select(.category == "nulls")'
 ```
 
-**Onde mexe.** O trabalho pesado já está feito: [src/profiling.py](../src/profiling.py) retorna um dicionário e [src/quality.py](../src/quality.py) retorna `Finding`s. É basicamente serializar o que já existe, em vez de passar pelo `print`. Também desbloqueia o relatório HTML ([004](004-profile-relatorio-html.md)) e as specs de IA.
+**Onde mexe.** O trabalho pesado já está feito: [src/datatool/profiling.py](../src/datatool/profiling.py) retorna um dicionário e [src/datatool/quality.py](../src/datatool/quality.py) retorna `Finding`s. É basicamente serializar o que já existe, em vez de passar pelo `print`. Também desbloqueia o relatório HTML ([004](004-profile-relatorio-html.md)) e as specs de IA.
 
 ---
 
@@ -140,7 +140,7 @@ datatool check vendas.csv --rules regras.yaml
 # exit code 1
 ```
 
-**Por que Pro.** É exatamente o tipo de feature que empresas pagam para rodar em CI (é o nicho do Great Expectations, que é pesado para configurar). Reaproveita os detectores de [quality.py](../src/quality.py) e o parsing YAML que a spec [012](012-pipeline-automacao.md) já vai introduzir.
+**Por que Pro.** É exatamente o tipo de feature que empresas pagam para rodar em CI (é o nicho do Great Expectations, que é pesado para configurar). Reaproveita os detectores de [quality.py](../src/datatool/quality.py) e o parsing YAML que a spec [012](012-pipeline-automacao.md) já vai introduzir.
 
 ---
 
@@ -179,7 +179,7 @@ datatool clean clientes.csv --mask-columns cpf,email --output clientes_anon.csv
 - Guardrails que o CLI direto não precisa, por ser um agente decidindo e executando sem uma pessoa conferindo cada comando: sandbox de diretório, nunca sobrescrever o arquivo de entrada, exigir confirmação explícita para sobrescrever um arquivo de saída existente
 - Valores de célula (top-N do profiling, exemplos de valores inválidos) ficam ocultos por padrão nas respostas — só as contagens — porque esse texto passa a trafegar para o provedor do modelo de IA, não só para quem roda o CLI
 
-**Onde mexe.** Novo módulo `src/mcp_server.py`; reaproveita quase tudo de [019](019-saida-json.md) (formato) e [017](017-csv-delimitador-encoding.md) (log). Exigiu duas extensões pequenas nas specs existentes: `--redact-values` em 019 (ocultar valores em qualquer saída, não só MCP) e `--columns`/`--max-columns` em [003](003-profile-estatistico.md) (limitar o tamanho da resposta do `profile` em datasets largos).
+**Onde mexe.** Novo módulo `src/datatool/mcp_server.py`; reaproveita quase tudo de [019](019-saida-json.md) (formato) e [017](017-csv-delimitador-encoding.md) (log). Exigiu duas extensões pequenas nas specs existentes: `--redact-values` em 019 (ocultar valores em qualquer saída, não só MCP) e `--columns`/`--max-columns` em [003](003-profile-estatistico.md) (limitar o tamanho da resposta do `profile` em datasets largos).
 
 ---
 
@@ -198,7 +198,7 @@ datatool clean clientes.csv --trim --remove-duplicates --dry-run
 # Resultado: 152.438 → 152.415 linhas. Nada foi gravado.
 ```
 
-**Onde mexe.** [src/clean.py](../src/clean.py): cada operador já reporta contagem (007/008); falta os operadores de texto (006) também reportarem e um modo que pule `_write_or_print`.
+**Onde mexe.** [src/datatool/clean.py](../src/datatool/clean.py): cada operador já reporta contagem (007/008); falta os operadores de texto (006) também reportarem e um modo que pule `_write_or_print`.
 
 ---
 
@@ -304,7 +304,7 @@ datatool join clientes.csv pedidos.csv --on cpf --output base.parquet
 
 ## Reconciliar comandos-esqueleto
 
-O [src/main.py](../src/main.py) tem comandos que só imprimem os argumentos recebidos e **não correspondem a nenhuma spec**:
+O [src/datatool/main.py](../src/datatool/main.py) tem comandos que só imprimem os argumentos recebidos e **não correspondem a nenhuma spec**:
 
 | Comando | Sobreposição com o roadmap |
 |---------|---------------------------|

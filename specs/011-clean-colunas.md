@@ -4,7 +4,7 @@
 Como analista de dados, eu quero renomear ou remover colunas de um dataset, para padronizar o schema antes de usá-lo em outra ferramenta.
 
 ## Contexto
-Implementado em [src/clean.py](../src/clean.py), como mais duas flags de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)–[010](010-clean-corrigir-tipos.md)).
+Implementado em [src/datatool/clean.py](../src/datatool/clean.py), como mais duas flags de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)–[010](010-clean-corrigir-tipos.md)).
 
 ## Interface proposta
 ```bash
@@ -17,7 +17,7 @@ datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp
 - [x] `--remove-columns` remove as colunas especificadas
 - [x] Erro claro (sem alterar o arquivo) se uma coluna referenciada não existir no dataset
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanColumns`).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanColumns`).
 
 ## Nota de implementação
 - Ordem: `--remove-columns` → `--rename-columns` → demais operações (texto → `--normalize-dates` → `--fix-types` → `--fill-null` → `--drop-null` → `--remove-duplicates`). Consequências:

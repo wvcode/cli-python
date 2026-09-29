@@ -6,7 +6,7 @@ Como analista que recebeu um arquivo de terceiros, eu quero rodar um comando e v
 ## Contexto
 Este é o diferencial comercial citado na ideia: a ferramenta não só converte, ela **entende o arquivo e sugere operações**.
 
-Implementado em [src/info.py](../src/info.py) (orquestração: leitura, impressão) e [src/quality.py](../src/quality.py) (heurísticas de detecção, reutilizáveis pela futura spec 005). A leitura reaproveita `infer_file_type`/`read_function` de [001-convert](001-convert.md).
+Implementado em [src/datatool/info.py](../src/datatool/info.py) (orquestração: leitura, impressão) e [src/datatool/quality.py](../src/datatool/quality.py) (heurísticas de detecção, reutilizáveis pela futura spec 005). A leitura reaproveita `infer_file_type`/`read_function` de [001-convert](001-convert.md).
 
 ## Interface proposta
 ```bash
@@ -21,7 +21,7 @@ Saída no formato do exemplo da ideia: linhas, colunas, tamanho, lista de proble
 - [x] Funciona para CSV, JSON, Excel e Parquet
 - [x] Executa em tempo aceitável para arquivos de até ~200 mil linhas (~0,3s em teste manual com 200 mil linhas)
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestInfoCommand`).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestInfoCommand`).
 
 ## Heurísticas de detecção (nota de implementação)
 - **Nulos**: contagem por coluna (`df.null_count()`), reportada apenas para colunas com contagem > 0.

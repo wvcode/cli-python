@@ -4,7 +4,7 @@
 Como analista de dados, eu quero preencher ou remover valores nulos, para que o dataset fique consistente para análise.
 
 ## Contexto
-Implementado em [src/clean.py](../src/clean.py), como mais duas flags de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)/[007](007-clean-remover-duplicidades.md)).
+Implementado em [src/datatool/clean.py](../src/datatool/clean.py), como mais duas flags de operação do comando `clean` (junto das de [006](006-clean-operadores-string.md)/[007](007-clean-remover-duplicidades.md)).
 
 ## Interface proposta
 ```bash
@@ -19,7 +19,7 @@ datatool clean clientes.csv --drop-null --columns email
 - [x] `--drop-null` remove linhas com nulos (todas as colunas por padrão, ou colunas especificadas via `--columns`)
 - [x] Ambas as operações reportam a quantidade de células/linhas afetadas
 
-Coberto por testes em [src/test_cli.py](../src/test_cli.py) (`TestCleanFillNull`, `TestCleanDropNull`).
+Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanFillNull`, `TestCleanDropNull`).
 
 ## Nota de implementação
 - `--fill-null` é repetível (`--fill-null "N/A" --fill-null "idade:0"`) e cada ocorrência é uma destas duas formas:

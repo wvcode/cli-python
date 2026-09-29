@@ -21,10 +21,10 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Isso registra o comando `datatool` no ambiente virtual (instalação editável: alterações em `src/` refletem sem reinstalar). Para apenas rodar via módulo, sem instalar:
+Isso registra o comando `datatool` no ambiente virtual (instalação editável: alterações em `src/datatool/` refletem sem reinstalar). Para apenas rodar via módulo, sem instalar:
 
 ```bash
-python -m src.main <comando> ...
+PYTHONPATH=src python -m datatool.main <comando> ...
 ```
 
 Para desenvolvimento (testes e lint):
@@ -407,19 +407,20 @@ Os comandos abaixo já existem no CLI como esqueleto, mas ainda não implementam
 Rodar os testes:
 
 ```bash
-python -m pytest src/ -v
+python -m pytest tests/ -v
 ```
 
 Rodar o lint:
 
 ```bash
-python -m ruff check src/
+python -m ruff check src/ tests/
 ```
 
 ## Estrutura do projeto
 
 ```text
-src/            código-fonte do CLI (comandos, leitura/gravação, heurísticas)
+src/datatool/   código-fonte do CLI (comandos, leitura/gravação, heurísticas)
+tests/          suíte de testes (pytest)
 specs/          uma spec por user story, com critérios de aceite e status
 examples/       arquivos de exemplo para testar os comandos manualmente
 ```
