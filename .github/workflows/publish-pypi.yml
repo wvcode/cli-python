@@ -51,6 +51,18 @@ jobs:
           pip install twine
           twine check dist/*
 
+      # O setuptools-scm só gera X.Y.Z no commit exato da tag vX.Y.Z. Fora dele
+      # (ex.: "Run workflow" manual a partir de main), a versão sai como
+      # X.Y.Z.devN+gHASH, que o PyPI recusa só no upload. Falha aqui, antes.
+      - name: Check that the version matches the release tag
+        run: |
+          VERSION=$(ls dist/*.whl | sed -E 's|^dist/datatool_cli-([^-]+)-.*$|\1|')
+          echo "Versão construída: $VERSION (ref: $GITHUB_REF_TYPE $GITHUB_REF_NAME)"
+          if [ "$GITHUB_REF_TYPE" != "tag" ] || [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::A versão construída ($VERSION) não corresponde à tag da release ($GITHUB_REF_NAME). Publique criando uma release com a tag vX.Y.Z no commit desejado."
+            exit 1
+          fi
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
