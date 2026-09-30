@@ -1,0 +1,821 @@
+<title>datatool</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --bg: #F2F4F1;
+    --text: #1C2420;
+    --text-muted: #4B5750;
+    --panel-bg: #12161C;
+    --panel-text: #E7ECE7;
+    --panel-text-muted: #93A099;
+    --accent: #0E8A66;
+    --accent-contrast: #FFFFFF;
+    --flag: #A9660F;
+    --danger: #A63F30;
+    --border: rgba(28, 36, 32, 0.14);
+    --card-bg: #FFFFFF;
+    --code-inline-bg: rgba(28, 36, 32, 0.07);
+    --shadow: 0 1px 2px rgba(20, 26, 22, 0.04), 0 8px 24px -12px rgba(20, 26, 22, 0.18);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #12161A;
+      --text: #EDEFE7;
+      --text-muted: #A7B0A8;
+      --panel-bg: #1B222A;
+      --panel-text: #E7ECE7;
+      --panel-text-muted: #93A099;
+      --accent: #34C99A;
+      --accent-contrast: #08120E;
+      --flag: #E2963C;
+      --danger: #E08571;
+      --border: rgba(237, 239, 231, 0.14);
+      --card-bg: #171C21;
+      --code-inline-bg: rgba(237, 239, 231, 0.08);
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #12161A;
+    --text: #EDEFE7;
+    --text-muted: #A7B0A8;
+    --panel-bg: #1B222A;
+    --panel-text: #E7ECE7;
+    --panel-text-muted: #93A099;
+    --accent: #34C99A;
+    --accent-contrast: #08120E;
+    --flag: #E2963C;
+    --danger: #E08571;
+    --border: rgba(237, 239, 231, 0.14);
+    --card-bg: #171C21;
+    --code-inline-bg: rgba(237, 239, 231, 0.08);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    padding-inline: 20px;
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent,
+      transparent 27px,
+      var(--border) 27px,
+      var(--border) 28px
+    );
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin-inline: auto;
+  }
+
+  .wide {
+    max-width: 1080px;
+    margin-inline: auto;
+  }
+
+  h1, h2, h3 {
+    font-family: "Fraunces", Georgia, serif;
+    text-wrap: balance;
+    line-height: 1.12;
+    margin: 0;
+  }
+
+  p { line-height: 1.65; margin: 0; }
+
+  a { color: inherit; }
+
+  code, .mono {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+  }
+
+  code {
+    background: var(--code-inline-bg);
+    padding: 0.1em 0.4em;
+    border-radius: 4px;
+    font-size: 0.92em;
+  }
+
+  ::selection { background: var(--accent); color: var(--accent-contrast); }
+
+  /* ---------- header ---------- */
+
+  header.top {
+    max-width: 1080px;
+    margin-inline: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-block: 22px 0;
+  }
+
+  .wordmark {
+    font-family: "Fraunces", serif;
+    font-weight: 600;
+    font-size: 1.15rem;
+    letter-spacing: -0.01em;
+  }
+
+  .wordmark::before {
+    content: "$ ";
+    color: var(--accent);
+  }
+
+  .top nav a {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.82rem;
+    text-decoration: none;
+    color: var(--text-muted);
+    border-bottom: 1px solid transparent;
+  }
+
+  .top nav a:hover { color: var(--text); border-color: var(--border); }
+
+  /* ---------- hero ---------- */
+
+  .hero {
+    max-width: 1080px;
+    margin-inline: auto;
+    display: grid;
+    grid-template-columns: 1.05fr 1fr;
+    gap: 48px;
+    align-items: center;
+    padding-block: 56px 40px;
+  }
+
+  @media (max-width: 780px) {
+    .hero { grid-template-columns: 1fr; padding-block: 32px 8px; }
+  }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+  }
+
+  .eyebrow span { white-space: nowrap; }
+  .eyebrow span:not(:last-child)::after { content: "·"; margin-left: 10px; color: var(--border); }
+
+  .hero h1 {
+    font-size: clamp(2rem, 4.4vw, 3rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .hero h1 em {
+    font-style: normal;
+    color: var(--accent);
+  }
+
+  .hero p.lede {
+    margin-top: 18px;
+    font-size: 1.08rem;
+    color: var(--text-muted);
+    max-width: 46ch;
+  }
+
+  .cta-row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-top: 28px;
+  }
+
+  .btn {
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 600;
+    font-size: 0.92rem;
+    padding: 0.72em 1.3em;
+    border-radius: 6px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid transparent;
+    cursor: pointer;
+  }
+
+  .btn-primary { background: var(--accent); color: var(--accent-contrast); }
+  .btn-primary:hover { filter: brightness(1.06); }
+
+  .btn-ghost {
+    background: transparent;
+    border-color: var(--border);
+    color: var(--text);
+  }
+  .btn-ghost:hover { border-color: var(--text-muted); }
+
+  .install-chip {
+    margin-top: 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--code-inline-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.6em 0.6em 0.6em 1em;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.86rem;
+  }
+
+  .copy-btn {
+    background: var(--panel-bg);
+    color: var(--panel-text);
+    border: none;
+    border-radius: 4px;
+    padding: 0.4em 0.7em;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    cursor: pointer;
+  }
+  .copy-btn:hover { filter: brightness(1.15); }
+
+  /* ---------- terminal window ---------- */
+
+  .terminal {
+    background: var(--panel-bg);
+    color: var(--panel-text);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    font-family: "IBM Plex Mono", monospace;
+  }
+
+  .terminal .bar {
+    display: flex;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .terminal .bar span {
+    width: 9px; height: 9px; border-radius: 50%;
+  }
+  .terminal .bar span:nth-child(1) { background: var(--danger); }
+  .terminal .bar span:nth-child(2) { background: var(--flag); }
+  .terminal .bar span:nth-child(3) { background: var(--accent); }
+
+  .terminal pre {
+    margin: 0;
+    padding: 18px 20px 22px;
+    font-size: 0.82rem;
+    line-height: 1.7;
+    white-space: pre-wrap;
+    overflow-x: auto;
+  }
+
+  .terminal .prompt { color: var(--panel-text-muted); }
+  .terminal .flag { color: var(--flag); }
+  .terminal .accent { color: var(--accent); }
+  .terminal .muted { color: var(--panel-text-muted); }
+
+  .cursor {
+    display: inline-block;
+    width: 0.55em;
+    height: 1em;
+    background: var(--accent);
+    vertical-align: text-bottom;
+    animation: blink 1.1s steps(1) infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .cursor { animation: none; opacity: 1; }
+  }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* ---------- sections ---------- */
+
+  section { padding-block: 54px; }
+
+  .section-head { max-width: 62ch; margin-bottom: 32px; }
+  .section-head h2 { font-size: clamp(1.5rem, 2.6vw, 1.9rem); font-weight: 600; }
+  .section-head p { margin-top: 12px; color: var(--text-muted); font-size: 1.02rem; }
+
+  .rule { border: none; border-top: 1px solid var(--border); margin: 0; }
+
+  /* pain points */
+
+  .pain-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+  }
+
+  @media (max-width: 700px) { .pain-grid { grid-template-columns: 1fr; } }
+
+  .pain-item {
+    background: var(--card-bg);
+    padding: 22px 24px;
+  }
+
+  .pain-tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.72rem;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .pain-item p { color: var(--text-muted); font-size: 0.96rem; }
+  .pain-item strong { color: var(--text); font-weight: 600; }
+
+  /* before/after */
+
+  .toggle-row {
+    display: inline-flex;
+    background: var(--code-inline-bg);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 3px;
+    margin-bottom: 20px;
+  }
+
+  .toggle-row button {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.8rem;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 0.5em 1.1em;
+    border-radius: 999px;
+    cursor: pointer;
+  }
+
+  .toggle-row button.active {
+    background: var(--panel-bg);
+    color: var(--panel-text);
+  }
+
+  .diff-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.86rem;
+    box-shadow: var(--shadow);
+  }
+
+  .diff-table th {
+    text-align: left;
+    font-family: "IBM Plex Sans", sans-serif;
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .diff-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    transition: color 0.2s ease, background 0.2s ease;
+  }
+
+  .diff-table tr:last-child td { border-bottom: none; }
+
+  .diff-table td span[data-messy] { color: var(--danger); }
+  .diff-table td span[data-clean] { color: var(--accent); }
+  .diff-table[data-state="antes"] td span[data-clean] { display: none; }
+  .diff-table[data-state="depois"] td span[data-messy] { display: none; }
+  .diff-table tr[data-removed] { display: none; }
+  .diff-table[data-state="antes"] tr[data-removed] { display: table-row; opacity: 0.55; }
+
+  .diag-note {
+    margin-top: 18px;
+    font-size: 0.92rem;
+    color: var(--text-muted);
+  }
+
+  .bleed { max-width: 1080px; margin-inline: auto; }
+
+  /* command cards */
+
+  .cmd-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+  }
+
+  @media (max-width: 700px) { .cmd-grid { grid-template-columns: 1fr; } }
+
+  .cmd-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 22px 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .cmd-card h3 {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 1.05rem;
+    font-weight: 600;
+    color: var(--accent);
+    margin-bottom: 8px;
+  }
+
+  .cmd-card p { color: var(--text-muted); font-size: 0.94rem; margin-bottom: 14px; }
+
+  .cmd-card code.block {
+    display: block;
+    background: var(--code-inline-bg);
+    padding: 10px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* two column feature */
+
+  .two-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: start;
+  }
+
+  @media (max-width: 780px) { .two-col { grid-template-columns: 1fr; } }
+
+  .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .chip {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.76rem;
+    background: var(--code-inline-bg);
+    border: 1px solid var(--border);
+    padding: 0.4em 0.7em;
+    border-radius: 5px;
+    color: var(--text);
+  }
+
+  .stat-row {
+    display: flex;
+    gap: 26px;
+    flex-wrap: wrap;
+    margin-top: 24px;
+    font-family: "IBM Plex Mono", monospace;
+  }
+  .stat-row div { display: flex; flex-direction: column; gap: 2px; }
+  .stat-row .num { font-size: 1.3rem; font-weight: 600; color: var(--accent); }
+  .stat-row .label { font-size: 0.72rem; color: var(--text-muted); }
+
+  footer {
+    max-width: 1080px;
+    margin-inline: auto;
+    padding-block: 40px 32px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  footer p { color: var(--text-muted); font-size: 0.86rem; }
+  footer .links { display: flex; gap: 18px; }
+  footer .links a { font-size: 0.86rem; text-decoration: none; color: var(--text-muted); }
+  footer .links a:hover { color: var(--text); }
+</style>
+
+<header class="top">
+  <div class="wordmark">datatool</div>
+  <nav>
+    <a href="https://github.com/wvcode/cli-python" target="_blank" rel="noopener">GitHub ↗</a>
+  </nav>
+</header>
+
+<div class="hero">
+  <div>
+    <div class="eyebrow">
+      <span>CLI em Python</span>
+      <span>Python ≥ 3.10</span>
+      <span>MIT</span>
+    </div>
+    <h1>O CLI que resolve o CSV problemático antes do seu <em>script</em> quebrar.</h1>
+    <p class="lede">Converte, diagnostica, perfila e limpa CSV, Excel, JSON e Parquet: nulos, duplicidade, datas inconsistentes e texto que devia ser número, tudo detectado automaticamente. Também entende CSV com <code>;</code>/<code>cp1252</code>, CPF/CNPJ e valores em R$, nativamente.</p>
+    <div class="cta-row">
+      <a class="btn btn-primary" href="https://github.com/wvcode/cli-python" target="_blank" rel="noopener">Ver no GitHub</a>
+      <a class="btn btn-ghost" href="#instalacao">Instalação</a>
+    </div>
+    <div class="install-chip">
+      <code id="hero-install">pip install -e .</code>
+      <button class="copy-btn" data-copy-target="hero-install">copiar</button>
+    </div>
+    <div class="stat-row">
+      <div><span class="num">10/10</span><span class="label">user stories do MVP</span></div>
+      <div><span class="num">202</span><span class="label">testes automatizados</span></div>
+      <div><span class="num">20</span><span class="label">specs públicas</span></div>
+    </div>
+  </div>
+
+  <div class="terminal" aria-label="Exemplo de saída do comando datatool info">
+    <div class="bar"><span></span><span></span><span></span></div>
+    <pre><span class="prompt">$</span> datatool info clientes.csv
+
+Arquivo: clientes.csv
+Linhas: 10
+Colunas: 6
+Tamanho: 711 bytes
+
+Problemas encontrados:
+  <span class="flag">⚠ 3 valores nulos em "email"</span>
+  <span class="flag">⚠ 1 linhas duplicadas</span>
+  <span class="flag">⚠ "data_nascimento" contém 5 formatos de data diferentes</span>
+  <span class="flag">⚠ "idade" está armazenada como texto mas parece numérica</span>
+
+Sugestões:
+  1. Corrigir tipos <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --fix-types</span>
+  2. Remover duplicidades <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --remove-duplicates</span>
+<span class="prompt">$</span> <span class="cursor"></span></pre>
+  </div>
+</div>
+
+<div class="wrap">
+  <hr class="rule">
+</div>
+
+<section class="wrap">
+  <div class="section-head">
+    <h2>Detecta o que atrapalha antes de você perceber</h2>
+    <p><code>info</code> e <code>clean</code> abrem o arquivo e apontam os problemas, coluna por coluna, antes de qualquer análise.</p>
+  </div>
+  <div class="pain-grid">
+    <div class="pain-item">
+      <span class="pain-tag">NULOS · DUPLICIDADE</span>
+      <p><strong>O óbvio, automático.</strong> Valores nulos, linhas duplicadas (inteiras ou por chave, como um ID) e inconsistência de capitalização ("Porto Alegre" / "PORTO ALEGRE") saem no primeiro diagnóstico.</p>
+    </div>
+    <div class="pain-item">
+      <span class="pain-tag">TIPOS</span>
+      <p><strong>Texto que devia ser número.</strong> <code>--fix-types</code> reconhece tanto <code>1,234.56</code> quanto <code>1.234,56</code> e converte para o tipo certo, sem confundir milhar com decimal.</p>
+    </div>
+    <div class="pain-item">
+      <span class="pain-tag">DATAS</span>
+      <p><strong>Qualquer formato comum.</strong> Colunas com <code>dd/mm/yyyy</code>, <code>yyyy-mm-dd</code> e outras variações viram ISO 8601 numa única passada.</p>
+    </div>
+    <div class="pain-item">
+      <span class="pain-tag">CSV REGIONAL · DOCUMENTOS</span>
+      <p><strong>Suporte nativo ao Brasil.</strong> CSV exportado pelo Excel em português (<code>;</code>, <code>cp1252</code>) é detectado sozinho, e CPF/CNPJ são validados pelo dígito verificador.</p>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head">
+    <h2>De planilha bagunçada a dataset limpo</h2>
+    <p>O mesmo arquivo, antes e depois de <code>datatool clean clientes.csv --trim --normalize-case --normalize-documents masked --remove-duplicates --key cpf --output limpo.csv</code>.</p>
+  </div>
+
+  <div class="toggle-row" role="group" aria-label="Alternar entre antes e depois">
+    <button type="button" class="active" data-state-btn="antes">antes</button>
+    <button type="button" data-state-btn="depois">depois</button>
+  </div>
+
+  <div style="overflow-x:auto;">
+    <table class="diff-table" data-state="antes" id="diff-table">
+      <thead>
+        <tr><th>nome</th><th>cidade</th><th>cpf</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><span data-messy>"&nbsp;&nbsp;Ana Souza&nbsp;&nbsp;"</span><span data-clean>Ana Souza</span></td>
+          <td><span data-messy>PORTO ALEGRE</span><span data-clean>Porto Alegre</span></td>
+          <td><span data-messy>52998224725</span><span data-clean>529.982.247-25</span></td>
+        </tr>
+        <tr>
+          <td><span data-messy>"joão pereira&nbsp;"</span><span data-clean>joão pereira</span></td>
+          <td><span data-messy>porto alegre</span><span data-clean>Porto Alegre</span></td>
+          <td><span data-messy>12345678909</span><span data-clean>123.456.789-09</span></td>
+        </tr>
+        <tr data-removed>
+          <td>Ana Souza</td>
+          <td>Porto Alegre</td>
+          <td>52998224725</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="diag-note">A terceira linha é uma duplicidade por <code>cpf</code> e some no "depois" — <code>--remove-duplicates</code> mantém só a primeira ocorrência.</p>
+</section>
+
+<div class="bleed">
+  <div class="terminal" aria-label="Diagnóstico do comando datatool clean">
+    <div class="bar"><span></span><span></span><span></span></div>
+    <pre><span class="prompt">$</span> datatool clean clientes_sujos.csv
+
+Arquivo: clientes_sujos.csv
+Linhas: 20
+Colunas: 5
+
+nome
+  <span class="flag">1 registros com espaços extras</span>
+
+email
+  <span class="flag">1 valores inválidos</span>
+
+telefone
+  <span class="flag">3 formatos diferentes</span>
+
+cpf
+  <span class="flag">1 valores duplicados</span>
+
+cidade
+  <span class="muted">"PORTO ALEGRE"</span>
+  <span class="muted">"Porto Alegre"</span>
+  <span class="muted">"porto alegre"</span></pre>
+  </div>
+</div>
+
+<section class="wrap">
+  <div class="section-head">
+    <h2>Quatro comandos, um fluxo</h2>
+    <p>Sem flags, <code>clean</code> só diagnostica — nada é gravado até você pedir.</p>
+  </div>
+  <div class="cmd-grid">
+    <div class="cmd-card">
+      <h3>convert</h3>
+      <p>Converte entre CSV, JSON, JSONL, Excel, Parquet e SQLite. O formato é inferido pela extensão do arquivo.</p>
+      <code class="block">datatool convert vendas.xlsx vendas.parquet</code>
+    </div>
+    <div class="cmd-card">
+      <h3>info</h3>
+      <p>Abre um arquivo e aponta nulos, duplicidade, datas inconsistentes e texto que devia ser número.</p>
+      <code class="block">datatool info clientes.csv</code>
+    </div>
+    <div class="cmd-card">
+      <h3>profile</h3>
+      <p>Min, max, média, percentis e outliers nas colunas numéricas; cardinalidade e top valores nas categóricas.</p>
+      <code class="block">datatool profile vendas.csv --key cpf</code>
+    </div>
+    <div class="cmd-card">
+      <h3>clean</h3>
+      <p>Corrige o que o <code>info</code> encontrou: espaços, capitalização, duplicidade, nulos, datas, tipos, CPF/CNPJ.</p>
+      <code class="block">datatool clean clientes.csv --fix-types --output limpo.csv</code>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="two-col">
+    <div>
+      <h2 style="font-size: 1.6rem; font-weight: 600; margin-bottom: 12px;">JSON pronto para script e CI</h2>
+      <p style="color: var(--text-muted); margin-bottom: 16px;"><code>--format json</code> troca a saída de texto por um documento versionado — o mesmo diagnóstico, em formato que um <code>jq</code>, um notebook ou um pipeline de CI conseguem ler.</p>
+      <p style="color: var(--text-muted);"><code>--redact-values</code> tira os valores de célula do relatório sem perder as contagens. Serve para colar a saída num chat de IA ou num ticket sem expor dado de cliente — o log de execução também nunca grava valores.</p>
+    </div>
+    <div class="terminal" aria-label="Saída em JSON do comando datatool info">
+      <div class="bar"><span></span><span></span><span></span></div>
+      <pre style="font-size:0.76rem;">{
+  <span class="muted">"schema_version"</span>: 1,
+  <span class="muted">"command"</span>: <span class="accent">"info"</span>,
+  <span class="muted">"status"</span>: <span class="accent">"ok"</span>,
+  <span class="muted">"file"</span>: {
+    <span class="muted">"path"</span>: <span class="accent">"clientes.csv"</span>,
+    <span class="muted">"rows"</span>: 10,
+    <span class="muted">"columns"</span>: 6
+  },
+  <span class="muted">"problems"</span>: [
+    {
+      <span class="muted">"category"</span>: <span class="accent">"nulls"</span>,
+      <span class="muted">"column"</span>: <span class="accent">"email"</span>,
+      <span class="muted">"count"</span>: 3
+    }
+  ]
+}</pre>
+    </div>
+  </div>
+</section>
+
+<section class="wrap">
+  <div class="section-head">
+    <h2>Um servidor MCP para agentes de IA</h2>
+    <p>Claude Code, Claude Desktop, Cursor e outros agentes que falam <a href="https://modelcontextprotocol.io/" target="_blank" rel="noopener">MCP</a> podem chamar <code>info</code>, <code>profile</code>, <code>clean</code> e <code>convert</code> direto, em vez de escrever código de análise do zero a cada conversa.</p>
+  </div>
+  <div class="two-col">
+    <div>
+      <div class="chip-row">
+        <span class="chip">datatool_info</span>
+        <span class="chip">datatool_profile</span>
+        <span class="chip">datatool_clean_diagnose</span>
+        <span class="chip">datatool_clean_apply</span>
+        <span class="chip">datatool_convert</span>
+      </div>
+      <p style="color: var(--text-muted); margin-top: 16px;">Todo caminho de arquivo fica restrito ao diretório passado em <code>--root</code>. <code>redact_values</code> vem ligado por padrão nas ferramentas — diferente do CLI — para valores de célula não trafegarem para o modelo sem pedido explícito.</p>
+      <div class="install-chip" style="margin-top:18px;">
+        <code id="mcp-install">pip install -e ".[mcp]"</code>
+        <button class="copy-btn" data-copy-target="mcp-install">copiar</button>
+      </div>
+    </div>
+    <div class="terminal" aria-label="Configuração do servidor MCP">
+      <div class="bar"><span></span><span></span><span></span></div>
+      <pre style="font-size:0.78rem;" id="mcp-config">{
+  <span class="muted">"mcpServers"</span>: {
+    <span class="muted">"datatool"</span>: {
+      <span class="muted">"command"</span>: <span class="accent">"datatool-mcp"</span>,
+      <span class="muted">"args"</span>: [<span class="accent">"--root"</span>, <span class="accent">"/caminho/do/projeto"</span>]
+    }
+  }
+}</pre>
+    </div>
+  </div>
+</section>
+
+<section class="wrap" id="instalacao">
+  <div class="section-head">
+    <h2>Instalação</h2>
+    <p>Ainda não publicado no PyPI — instale a partir do código-fonte.</p>
+  </div>
+  <div class="terminal" style="max-width: 620px;">
+    <div class="bar"><span></span><span></span><span></span></div>
+    <pre id="install-steps"><span class="prompt">$</span> git clone https://github.com/wvcode/cli-python.git
+<span class="prompt">$</span> cd cli-python
+<span class="prompt">$</span> python -m venv .venv &amp;&amp; source .venv/bin/activate
+<span class="prompt">$</span> pip install -e .</pre>
+  </div>
+  <div class="cta-row" style="margin-top:20px;">
+    <button class="btn btn-ghost" data-copy-target="install-steps">Copiar comandos</button>
+    <a class="btn btn-primary" href="https://github.com/wvcode/cli-python" target="_blank" rel="noopener">Ver no GitHub</a>
+  </div>
+</section>
+
+<footer>
+  <p>MIT License · cada funcionalidade nasce de uma spec pública com critérios de aceite.</p>
+  <div class="links">
+    <a href="https://github.com/wvcode/cli-python" target="_blank" rel="noopener">Repositório</a>
+    <a href="https://github.com/wvcode/cli-python/blob/main/specs/README.md" target="_blank" rel="noopener">Specs</a>
+    <a href="https://github.com/wvcode/cli-python/issues" target="_blank" rel="noopener">Issues</a>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    function textOf(el) {
+      return el.innerText || el.textContent || "";
+    }
+
+    document.querySelectorAll("[data-copy-target]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var target = document.getElementById(btn.getAttribute("data-copy-target"));
+        if (!target) return;
+        var text = textOf(target).replace(/^\$ /gm, "").trim();
+        var original = btn.textContent;
+        function done(ok) {
+          btn.textContent = ok ? "copiado" : "selecione e copie";
+          setTimeout(function () { btn.textContent = original; }, 1600);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(function () { done(true); }, function () {
+            selectFallback(target);
+            done(false);
+          });
+        } else {
+          selectFallback(target);
+          done(false);
+        }
+      });
+    });
+
+    function selectFallback(target) {
+      try {
+        var range = document.createRange();
+        range.selectNodeContents(target);
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {}
+    }
+
+    var table = document.getElementById("diff-table");
+    document.querySelectorAll("[data-state-btn]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var state = btn.getAttribute("data-state-btn");
+        table.setAttribute("data-state", state);
+        document.querySelectorAll("[data-state-btn]").forEach(function (b) {
+          b.classList.toggle("active", b === btn);
+        });
+      });
+    });
+  })();
+</script>
