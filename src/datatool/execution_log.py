@@ -1,10 +1,13 @@
 # -*- coding: utf-8 -*-
 
+import contextvars
 import functools
 import logging
 import os
+import threading
 import time
 import uuid
+from collections import namedtuple
 from enum import Enum
 from logging.handlers import RotatingFileHandler
 
@@ -21,45 +24,67 @@ log.propagate = False
 # Sem nenhum handler, o logging imprimiria WARNING/ERROR no stderr ("last resort").
 log.addHandler(logging.NullHandler())
 
+# Execução corrente, por contexto (thread/tarefa): o servidor MCP roda
+# ferramentas em paralelo, cada uma numa thread, todas no mesmo logger.
+_Run = namedtuple("_Run", ["run_id", "command", "handler"])
+_current_run = contextvars.ContextVar("datatool_run", default=None)
 
-class _QuietRotatingFileHandler(RotatingFileHandler):
-    # O log é auxiliar: uma falha ao gravar nunca pode afetar o comando.
+# Um handler por arquivo de log, compartilhado pelas execuções simultâneas que
+# gravam nele: caminho absoluto → [handler, execuções usando].
+_handlers = {}
+_handlers_lock = threading.Lock()
+
+
+class _RunFileHandler(RotatingFileHandler):
     def handleError(self, record):
+        # O log é auxiliar: uma falha ao gravar nunca pode afetar o comando.
         pass
 
-
-class _RunFilter(logging.Filter):
-    def __init__(self, run_id, command):
-        super().__init__()
-        self.run_id = run_id
-        self.command = command
-
     def filter(self, record):
-        record.run_id = self.run_id
-        record.command = self.command
+        # Só grava registros de execuções que abriram este arquivo, marcados
+        # com o run_id/comando de quem os emitiu.
+        run = _current_run.get()
+        if run is None or run.handler is not self:
+            return False
+        record.run_id = run.run_id
+        record.command = run.command
         return True
 
 
-def _open_handler(command):
-    try:
-        os.makedirs(LOG_DIR, exist_ok=True)
-        handler = _QuietRotatingFileHandler(
-            os.path.join(LOG_DIR, LOG_FILE),
-            maxBytes=MAX_BYTES,
-            backupCount=BACKUP_COUNT,
-            encoding="utf-8",
-        )
-    except OSError:
-        return None
+def _acquire_handler():
+    path = os.path.abspath(os.path.join(LOG_DIR, LOG_FILE))
+    with _handlers_lock:
+        entry = _handlers.get(path)
+        if entry is None:
+            try:
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                handler = _RunFileHandler(
+                    path,
+                    maxBytes=MAX_BYTES,
+                    backupCount=BACKUP_COUNT,
+                    encoding="utf-8",
+                )
+            except OSError:
+                return None
+            handler.setFormatter(
+                logging.Formatter(
+                    "%(asctime)s %(levelname)-7s [%(run_id)s] %(command)s: %(message)s"
+                )
+            )
+            log.addHandler(handler)
+            entry = _handlers[path] = [handler, 0]
+        entry[1] += 1
+        return entry[0]
 
-    handler.setFormatter(
-        logging.Formatter(
-            "%(asctime)s %(levelname)-7s [%(run_id)s] %(command)s: %(message)s"
-        )
-    )
-    handler.addFilter(_RunFilter(uuid.uuid4().hex[:6], command))
-    log.addHandler(handler)
-    return handler
+
+def _release_handler(handler):
+    with _handlers_lock:
+        entry = _handlers[handler.baseFilename]
+        entry[1] -= 1
+        if entry[1] == 0:
+            del _handlers[handler.baseFilename]
+            log.removeHandler(handler)
+            handler.close()
 
 
 def _format_args(kwargs):
@@ -79,7 +104,8 @@ def logged(command, log_args=True):
     def decorator(function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
-            handler = _open_handler(command)
+            handler = _acquire_handler()
+            token = _current_run.set(_Run(uuid.uuid4().hex[:6], command, handler))
             started = time.monotonic()
             log.info(
                 "início — args: %s",
@@ -99,9 +125,9 @@ def logged(command, log_args=True):
             finally:
                 elapsed = f"{time.monotonic() - started:.2f}".replace(".", ",")
                 log.info("fim — exit code %s, %s s", exit_code, elapsed)
+                _current_run.reset(token)
                 if handler is not None:
-                    log.removeHandler(handler)
-                    handler.close()
+                    _release_handler(handler)
 
         return wrapper
 

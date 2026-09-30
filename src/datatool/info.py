@@ -4,8 +4,9 @@ import os
 from collections import namedtuple
 
 from .execution_log import log
+from .formatting import format_int_ptbr
 from .loading import load_input
-from .quality import analyze, display_message, finding_to_dict, format_int_ptbr
+from .quality import analyze, display_message, finding_to_dict
 from .reporting import build_document
 
 _SUGGESTIONS = [

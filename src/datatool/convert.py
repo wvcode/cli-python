@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 
+import sys
 from collections import namedtuple
 
-from .loading import load_input, output_file_type, write_output
-from .reporting import build_document, file_summary
+from .loading import check_output, csv_text, load_input, output_file_type, write_output
+from .reporting import CommandError, build_document, file_summary
 from .structures import read_file
 
 ConvertResult = namedtuple(
@@ -18,11 +19,12 @@ def convert(
     to_type=None,
     sep=None,
     encoding=None,
+    overwrite=False,
     reload_target=False,
 ):
     """Converte o arquivo; levanta `CommandError` em entrada ou saída inválida.
 
-    Sem `to_filename`, só carrega (o CLI imprime o DataFrame). Com
+    Sem `to_filename`, só carrega (o CLI imprime o dataset em CSV). Com
     `reload_target`, relê o destino para conferir o shape gravado.
     """
     loaded = load_input(
@@ -32,15 +34,23 @@ def convert(
         return ConvertResult(loaded, None, None, None)
 
     to_type = output_file_type(to_filename, to_type, type_option="--to-type")
+    check_output(to_filename, overwrite)
     write_output(loaded.df, to_filename, to_type)
 
-    target_shape = read_file(to_type, to_filename).shape if reload_target else None
+    target_shape = None
+    if reload_target:
+        try:
+            target_shape = read_file(to_type, to_filename).shape
+        except Exception as error:
+            raise CommandError(
+                f"Saved {to_filename}, but could not reload it for --show-stats: "
+                f"{error}",
+                1,
+            ) from error
     return ConvertResult(loaded, to_filename, to_type, target_shape)
 
 
 def to_document(result):
-    # O CLI não tem `--format json` para o convert (fora do escopo de 019):
-    # este documento só é usado pelo servidor MCP de 020.
     return build_document(
         "convert",
         status="ok",
@@ -51,13 +61,18 @@ def to_document(result):
 
 def print_text(result, show_stats=False):
     df = result.input.df
-    if show_stats:
-        print("Source loaded")
-        print(f"  - (rows, columns) = {df.shape}")
+    # Sem destino, o stdout leva o dataset em CSV (para pipe); as estatísticas
+    # vão para o stderr para não se misturar a ele.
+    to_stdout = result.to_filename is None
+    stats_file = sys.stderr if to_stdout else sys.stdout
+    data = csv_text(df) if to_stdout else None
 
-    # Sem destino, o DataFrame vai para o stdout
-    if result.to_filename is None:
-        print(df)
+    if show_stats:
+        print("Source loaded", file=stats_file)
+        print(f"  - (rows, columns) = {df.shape}", file=stats_file)
+
+    if to_stdout:
+        print(data, end="")
         return
 
     if show_stats:

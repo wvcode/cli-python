@@ -6,7 +6,7 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`, validação de CPF/CNPJ, servidor MCP (`datatool-mcp`) para agentes de IA
+- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`/`convert`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`, validação de CPF/CNPJ, servidor MCP (`datatool-mcp`) para agentes de IA
 - **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
@@ -55,10 +55,12 @@ datatool convert vendas.xlsx vendas.csv
 ```
 
 - Formatos suportados: **CSV, JSON, JSONL, Excel (xlsx), Parquet, SQLite**, além de Feather e Avro.
-- SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Se ela já existir, é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas.
+- SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
-- Se `to_filename` for omitido, o resultado é impresso no stdout em vez de gravado em arquivo.
-- `--show-stats` imprime (linhas, colunas) da origem e do destino.
+- Se `to_filename` for omitido, o dataset inteiro é impresso no stdout em CSV, pronto para pipe (`datatool convert vendas.xlsx | head`).
+- Se o destino já existir, o comando recusa (exit code 2) e não altera nada; use `--overwrite` para substituí-lo.
+- `--show-stats` imprime (linhas, colunas) da origem e do destino; sem `to_filename`, vai para o stderr, para não se misturar ao CSV.
+- `--format json` imprime um documento com `source` e `target` (exige `to_filename`; não combina com `--show-stats`).
 
 ```bash
 datatool convert vendas.csv vendas.parquet --show-stats
@@ -188,7 +190,7 @@ cidade
 
 Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](examples/clientes_sujos.csv).
 
-Com pelo menos uma flag de operação, o comando passa a transformar os dados (só em colunas de texto — colunas numéricas, por exemplo, não são alteradas) e mostra o resultado: grava em `--output arquivo` (formato inferido pela extensão, igual ao `convert`) ou, se omitido, imprime o DataFrame no stdout. Nada é gravado por padrão.
+Com pelo menos uma flag de operação, o comando passa a transformar os dados (só em colunas de texto — colunas numéricas, por exemplo, não são alteradas) e mostra o resultado: grava em `--output arquivo` (formato inferido pela extensão, igual ao `convert`) ou, se omitido, imprime o dataset inteiro em CSV no stdout, com o relatório das operações no stderr. Nada é gravado por padrão, e um `--output` que já existe só é substituído com `--overwrite`.
 
 ```bash
 datatool clean clientes.csv --trim --normalize-case --output clientes_limpo.csv
@@ -338,7 +340,7 @@ Toda execução registra em `logs/datatool.log` (no diretório onde o comando fo
 
 ### Saída em JSON (`--format json`)
 
-`info`, `profile` e `clean` aceitam `--format json` (o padrão é `--format text`, a saída descrita acima). O stdout passa a ser um único documento JSON, para uso em scripts, notebooks e CI:
+`info`, `profile`, `clean` e `convert` aceitam `--format json` (o padrão é `--format text`, a saída descrita acima). O stdout passa a ser um único documento JSON, para uso em scripts, notebooks e CI:
 
 ```bash
 datatool info clientes.csv --format json | jq '.problems[] | select(.category == "nulls")'
@@ -361,10 +363,11 @@ datatool clean clientes.csv --fix-types --remove-duplicates --output limpo.parqu
 }
 ```
 
-- Todo documento traz `schema_version`, `command` e `status`; `info` traz `problems`/`suggestions`, `profile` traz `duplicates`/`columns`, e o `clean` traz `problems` (diagnóstico) ou `operations`/`output` (com operações)
+- Cada problema traz `count` e `count_unit` (`rows`, `values`, `formats` ou `variants`), que diz o que está sendo contado
+- Todo documento traz `schema_version`, `command` e `status`; `info` traz `problems`/`suggestions`, `profile` traz `duplicates`/`columns`, o `clean` traz `problems` (diagnóstico) ou `operations`/`output` (com operações), e o `convert` traz `source`/`target`
 - Números sem formatação pt-BR nem arredondamento; `NaN` vira `null`
 - Erros também saem em JSON (`"status": "error"`), com o mesmo exit code do modo texto
-- No `clean` com operações, `--output` é obrigatório: o JSON é só o relatório, os dados vão para o arquivo
+- No `clean` com operações, `--output` é obrigatório, e no `convert`, o `to_filename`: o JSON é só o relatório, os dados vão para o arquivo
 - O formato completo, campo a campo, está em [specs/019-saida-json.md](specs/019-saida-json.md)
 
 ### Ocultar valores de célula (`--redact-values`)

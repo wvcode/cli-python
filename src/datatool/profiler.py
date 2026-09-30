@@ -3,9 +3,9 @@
 from collections import namedtuple
 
 from .execution_log import log
+from .formatting import format_int_ptbr
 from .loading import load_input, resolve_columns
 from .profiling import profile as compute_profile
-from .quality import format_int_ptbr
 from .reporting import CommandError, build_document
 
 ProfileResult = namedtuple(

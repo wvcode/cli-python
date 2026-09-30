@@ -317,6 +317,7 @@ def build_server(root):
                 resolved_input,
                 options,
                 output=resolved_output,
+                overwrite=overwrite,
                 sep=sep,
                 encoding=encoding,
             ),
@@ -362,6 +363,7 @@ def build_server(root):
                 to_type=parsed_to_type,
                 sep=sep,
                 encoding=encoding,
+                overwrite=overwrite,
             ),
             convert_command.to_document,
         )

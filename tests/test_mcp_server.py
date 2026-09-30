@@ -454,3 +454,38 @@ class TestNoStdoutWrites:
             _call(server, "datatool_info", filename="naoexiste.csv")
 
             assert capsys.readouterr().out == ""
+
+
+class TestConcurrentCalls:
+    def test_parallel_tool_calls_keep_logs_apart(self, capsys):
+        # O SDK roda cada ferramenta numa thread: chamadas em paralelo não podem
+        # misturar logs nem escrever no stdout (canal do protocolo).
+        with isolated_filesystem():
+            for name in ("a", "b", "c", "d"):
+                with open(f"{name}.csv", "w", encoding="utf8") as f:
+                    f.write("nome\n" + "".join(f"P{i}\n" for i in range(2000)))
+            server = mcp_server.build_server(".")
+
+            async def call_all():
+                return await asyncio.gather(
+                    *(
+                        server.call_tool("datatool_info", {"filename": f"{name}.csv"})
+                        for name in ("a", "b", "c", "d")
+                    )
+                )
+
+            results = asyncio.run(call_all())
+
+            assert all(result.is_error is False for result in results)
+            assert capsys.readouterr().out == ""
+            with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
+                lines = f.read().splitlines()
+            starts = [line for line in lines if "mcp info: início" in line]
+            ends = [line for line in lines if "mcp info: fim" in line]
+            assert len(starts) == len(ends) == 4
+            run_ids = {line.split("[")[1].split("]")[0] for line in lines}
+            assert len(run_ids) == 4
+            for run_id in run_ids:
+                # Cada execução: início, lendo, detecção de encoding e de
+                # delimitador, lido, diagnóstico e fim — uma vez cada.
+                assert sum(f"[{run_id}]" in line for line in lines) == 7

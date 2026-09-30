@@ -1,53 +1,36 @@
 # -*- coding: utf-8 -*-
 
-import re
+import sys
 from collections import namedtuple
 from dataclasses import dataclass
-from datetime import datetime
 from typing import List, Optional
 
 import polars as pl
 
+from .documents import document_shape, mask_document, validate_document
 from .execution_log import log
+from .formatting import format_int_ptbr
+from .inference import (
+    DECIMAL_SEPARATORS,
+    date_columns,
+    date_formats_for,
+    detect_decimal_separator,
+    document_columns,
+    numeric_text_columns,
+    parse_date,
+    parse_number,
+)
 from .loading import (
+    check_output,
+    csv_text,
     load_input,
     output_file_type,
     parse_column_list,
     resolve_columns,
     write_output,
 )
-from .quality import (
-    _DATE_MATCH_RATIO,
-    _NUMERIC_MATCH_RATIO,
-    _document_shape_for,
-    _mask_document,
-    _sample_values,
-    _validate_document,
-    analyze_clean,
-    detect_document_columns,
-    display_message,
-    finding_to_dict,
-    format_int_ptbr,
-)
+from .quality import analyze_clean, display_message, finding_to_dict
 from .reporting import CommandError, build_document
-
-_YEAR_FIRST_FORMATS = [
-    "%Y-%m-%d",
-    "%Y/%m/%d",
-    "%Y.%m.%d",
-    "%Y-%m-%dT%H:%M:%S",
-    "%Y-%m-%d %H:%M:%S",
-]
-_DAY_FIRST_FORMATS = ["%d/%m/%Y", "%d-%m-%Y", "%d.%m.%Y", "%d/%m/%y", "%d-%m-%y"]
-_MONTH_FIRST_FORMATS = ["%m/%d/%Y", "%m-%d-%Y", "%m.%d.%Y", "%m/%d/%y", "%m-%d-%y"]
-
-# Separador decimal → padrão aceito (separador de milhar é o outro caractere)
-_NUMBER_PATTERNS = {
-    ",": re.compile(r"^-?(\d{1,3}(\.\d{3})+|\d+)(,\d+)?$"),
-    ".": re.compile(r"^-?(\d{1,3}(,\d{3})+|\d+)(\.\d+)?$"),
-}
-_LEADING_ZERO_PATTERN = re.compile(r"^-?0\d")
-_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 _UNRECOGNIZED_LIMIT = 10
 
@@ -91,7 +74,7 @@ CleanResult = namedtuple(
 
 # ----------------------------------------------------------------
 # Operações: cada `_apply_*` recebe (df, options) e devolve (df, campos do
-# relatório); `_print_*` e `_log_*` apresentam esse relatório.
+# relatório); `_text_*` e `_log_*` apresentam esse relatório.
 # ----------------------------------------------------------------
 def _string_operator(method):
     def apply(df, options):
@@ -122,14 +105,12 @@ def _apply_normalize_documents(df, options):
         )
 
     if options.document_columns:
-        document_columns = resolve_columns(
-            df, options.document_columns, "--document-columns"
-        )
+        columns = resolve_columns(df, options.document_columns, "--document-columns")
     else:
-        document_columns = detect_document_columns(df)
+        columns = document_columns(df)
 
     column_reports = []
-    for column in document_columns:
+    for column in columns:
         numeric_origin = df[column].dtype.is_integer()
         if numeric_origin:
             df = df.with_columns(pl.col(column).cast(pl.Utf8))
@@ -140,16 +121,14 @@ def _apply_normalize_documents(df, options):
         still_invalid = []
         unrecognized = []
         for value in values:
-            shape = _document_shape_for(value, numeric_origin)
+            shape = document_shape(value, numeric_origin)
             if shape is None:
                 unrecognized.append(value)
                 continue
 
             kind, digits, _masked = shape
-            mapping[value] = (
-                digits if mode == "digits" else _mask_document(kind, digits)
-            )
-            if _validate_document(kind, digits) != "valid":
+            mapping[value] = digits if mode == "digits" else mask_document(kind, digits)
+            if validate_document(kind, digits) != "valid":
                 still_invalid.append(value)
 
         normalized_count = df[column].is_in(list(mapping)).sum()
@@ -173,56 +152,10 @@ def _apply_normalize_documents(df, options):
     return df, {"columns": column_reports}
 
 
-def _parse_date(value, formats):
-    value = value.strip()
-    for date_format in formats:
-        try:
-            return datetime.strptime(value, date_format).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _date_formats(values):
-    # "01/02/1990" é ambíguo. Só assume mm/dd quando a coluna tem valores que só
-    # fazem sentido como mm/dd (ex.: "12/31/1990") e nenhum que só faça sentido
-    # como dd/mm (ex.: "31/12/1990"); caso contrário, dd/mm tem prioridade.
-    day_first_only = False
-    month_first_only = False
-    for value in values:
-        day_first = _parse_date(value, _DAY_FIRST_FORMATS) is not None
-        month_first = _parse_date(value, _MONTH_FIRST_FORMATS) is not None
-        day_first_only = day_first_only or (day_first and not month_first)
-        month_first_only = month_first_only or (month_first and not day_first)
-
-    if month_first_only and not day_first_only:
-        return _YEAR_FIRST_FORMATS + _MONTH_FIRST_FORMATS + _DAY_FIRST_FORMATS
-    return _YEAR_FIRST_FORMATS + _DAY_FIRST_FORMATS + _MONTH_FIRST_FORMATS
-
-
-def _detect_date_columns(df):
-    all_formats = _YEAR_FIRST_FORMATS + _DAY_FIRST_FORMATS + _MONTH_FIRST_FORMATS
-    date_columns = []
-    for column in df.columns:
-        if df[column].dtype != pl.Utf8:
-            continue
-
-        sample = _sample_values(df[column])
-        if not sample:
-            continue
-
-        matched = sum(1 for value in sample if _parse_date(value, all_formats))
-        if matched / len(sample) >= _DATE_MATCH_RATIO:
-            date_columns.append(column)
-    return date_columns
-
-
 def _apply_normalize_dates(df, options):
     if options.date_columns:
-        date_columns = resolve_columns(df, options.date_columns, "--date-columns")
-        non_text_columns = [
-            column for column in date_columns if df[column].dtype != pl.Utf8
-        ]
+        columns = resolve_columns(df, options.date_columns, "--date-columns")
+        non_text_columns = [column for column in columns if df[column].dtype != pl.Utf8]
         if non_text_columns:
             raise CommandError(
                 "Column(s) in --date-columns are not text: "
@@ -230,17 +163,17 @@ def _apply_normalize_dates(df, options):
                 2,
             )
     else:
-        date_columns = _detect_date_columns(df)
+        columns = date_columns(df)
 
     column_reports = []
-    for column in date_columns:
+    for column in columns:
         values = df[column].drop_nulls().unique().to_list()
-        formats = _date_formats(values)
+        formats = date_formats_for(values)
 
         mapping = {}
         unrecognized = []
         for value in values:
-            parsed = _parse_date(value, formats)
+            parsed = parse_date(value, formats)
             if parsed is None:
                 unrecognized.append(value)
             elif parsed.isoformat() != value:
@@ -262,69 +195,22 @@ def _apply_normalize_dates(df, options):
     return df, {"columns": column_reports}
 
 
-def _strip_number(value):
-    return _WHITESPACE_PATTERN.sub("", value.replace("R$", ""))
-
-
-def _detect_decimal_separator(values):
-    # "1.234" é ambíguo (mil duzentos e trinta e quatro ou um vírgula dois três
-    # quatro). Sem --decimal-separator, a coluna só é lida no formato brasileiro
-    # (ponto de milhar, vírgula decimal) quando algum valor tem vírgula ou "R$".
-    if any("," in value or "R$" in value for value in values):
-        return ","
-    return "."
-
-
-def _parse_number(value, decimal_separator):
-    value = _strip_number(value)
-    if not _NUMBER_PATTERNS[decimal_separator].match(value):
-        return None
-    thousands_separator = "." if decimal_separator == "," else ","
-    value = value.replace(thousands_separator, "").replace(decimal_separator, ".")
-    return float(value) if "." in value else int(value)
-
-
-def _detect_numeric_text_columns(df, decimal_separator):
-    document_columns = set(detect_document_columns(df))
-    numeric_columns = []
-    for column in df.columns:
-        if df[column].dtype != pl.Utf8 or column in document_columns:
-            continue
-
-        sample = _sample_values(df[column])
-        if not sample:
-            continue
-
-        # Valores com zero à esquerda ("01234") são códigos (CEP, CPF, ...):
-        # convertê-los para número perderia os zeros.
-        if any(_LEADING_ZERO_PATTERN.match(_strip_number(value)) for value in sample):
-            continue
-
-        separator = decimal_separator or _detect_decimal_separator(sample)
-        matched = sum(
-            1 for value in sample if _parse_number(value, separator) is not None
-        )
-        if matched / len(sample) >= _NUMERIC_MATCH_RATIO:
-            numeric_columns.append(column)
-    return numeric_columns
-
-
 def _apply_fix_types(df, options):
     decimal_separator = options.decimal_separator
-    if decimal_separator is not None and decimal_separator not in _NUMBER_PATTERNS:
+    if decimal_separator is not None and decimal_separator not in DECIMAL_SEPARATORS:
         raise CommandError(
             f"Invalid --decimal-separator: {decimal_separator}. Use ',' or '.'", 2
         )
 
     column_reports = []
-    for column in _detect_numeric_text_columns(df, decimal_separator):
+    for column in numeric_text_columns(df, decimal_separator):
         values = df[column].drop_nulls().unique().to_list()
-        separator = decimal_separator or _detect_decimal_separator(values)
+        separator = decimal_separator or detect_decimal_separator(values)
 
         mapping = {}
         failed = []
         for value in values:
-            parsed = _parse_number(value, separator)
+            parsed = parse_number(value, separator)
             if parsed is None:
                 failed.append(value)
             else:
@@ -452,106 +338,117 @@ def _apply_rename_columns(df, options):
     return df, {"mapping": mapping}
 
 
-def _print_examples(examples, distinct_count, redact_values=False):
+def _text_examples(examples, distinct_count, redact_values=False):
     if redact_values:
-        print("  (valores ocultos por --redact-values)")
-        return
-    for value in examples:
-        print(f'  "{value}"')
+        return ["  (valores ocultos por --redact-values)"]
+    lines = [f'  "{value}"' for value in examples]
     if distinct_count > len(examples):
-        print(f"  ... e mais {distinct_count - len(examples)} valores")
+        lines.append(f"  ... e mais {distinct_count - len(examples)} valores")
+    return lines
 
 
-def _print_nothing(report, redact_values):
-    pass
+def _text_nothing(report, redact_values):
+    return []
 
 
-def _print_remove_columns(report, redact_values):
-    print(f"{format_int_ptbr(len(report['columns']))} colunas removidas")
+def _text_remove_columns(report, redact_values):
+    return [f"{format_int_ptbr(len(report['columns']))} colunas removidas"]
 
 
-def _print_rename_columns(report, redact_values):
-    print(f"{format_int_ptbr(len(report['mapping']))} colunas renomeadas")
+def _text_rename_columns(report, redact_values):
+    return [f"{format_int_ptbr(len(report['mapping']))} colunas renomeadas"]
 
 
-def _print_normalize_documents(report, redact_values):
+def _text_normalize_documents(report, redact_values):
+    lines = []
     if not report["columns"]:
-        print("Nenhuma coluna de documento encontrada")
+        lines.append("Nenhuma coluna de documento encontrada")
     for column_report in report["columns"]:
         column = column_report["column"]
-        print(
+        lines.append(
             f'"{column}": {format_int_ptbr(column_report["normalized"])} '
             "documentos normalizados"
         )
         if column_report["still_invalid_count"]:
-            print(
+            lines.append(
                 f'"{column}": '
                 f"{format_int_ptbr(column_report['still_invalid_count'])} com "
                 "dígito verificador inválido (formatados, mas continuam "
                 "inválidos)"
             )
         if column_report["unrecognized_count"]:
-            print(
+            lines.append(
                 f'"{column}": '
                 f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
                 "fora do formato de CPF/CNPJ, mantidos sem alteração:"
             )
-            _print_examples(
-                column_report["unrecognized_examples"],
-                column_report["unrecognized_distinct"],
-                redact_values,
+            lines.extend(
+                _text_examples(
+                    column_report["unrecognized_examples"],
+                    column_report["unrecognized_distinct"],
+                    redact_values,
+                )
             )
+    return lines
 
 
-def _print_normalize_dates(report, redact_values):
+def _text_normalize_dates(report, redact_values):
+    lines = []
     if not report["columns"]:
-        print("Nenhuma coluna de data encontrada")
+        lines.append("Nenhuma coluna de data encontrada")
     for column_report in report["columns"]:
         column = column_report["column"]
-        print(
+        lines.append(
             f'"{column}": {format_int_ptbr(column_report["normalized"])} '
             "datas normalizadas"
         )
         if column_report["unrecognized_count"]:
-            print(
+            lines.append(
                 f'"{column}": '
                 f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
                 "não reconhecidos como data, mantidos sem alteração:"
             )
-            _print_examples(
-                column_report["unrecognized_examples"],
-                column_report["unrecognized_distinct"],
-                redact_values,
+            lines.extend(
+                _text_examples(
+                    column_report["unrecognized_examples"],
+                    column_report["unrecognized_distinct"],
+                    redact_values,
+                )
             )
+    return lines
 
 
-def _print_fix_types(report, redact_values):
+def _text_fix_types(report, redact_values):
+    lines = []
     if not report["columns"]:
-        print("Nenhuma coluna numérica armazenada como texto encontrada")
+        lines.append("Nenhuma coluna numérica armazenada como texto encontrada")
     for column_report in report["columns"]:
         column = column_report["column"]
         type_name = column_report["type"]
         if column_report["failed_count"]:
-            print(
+            lines.append(
                 f'"{column}": convertida para {type_name}, '
                 f"{format_int_ptbr(column_report['failed_count'])} valores não "
                 "convertidos (viraram nulo):"
             )
-            _print_examples(
-                column_report["failed_examples"],
-                column_report["failed_distinct"],
-                redact_values,
+            lines.extend(
+                _text_examples(
+                    column_report["failed_examples"],
+                    column_report["failed_distinct"],
+                    redact_values,
+                )
             )
         else:
-            print(f'"{column}": convertida para {type_name}')
+            lines.append(f'"{column}": convertida para {type_name}')
+    return lines
 
 
-def _print_fill_null(report, redact_values):
-    print(f"{format_int_ptbr(report['cells_filled'])} células preenchidas")
+def _text_fill_null(report, redact_values):
+    return [f"{format_int_ptbr(report['cells_filled'])} células preenchidas"]
 
 
-def _print_rows_removed(report, redact_values):
-    print(f"{format_int_ptbr(report['rows_removed'])} linhas removidas")
+def _text_rows_removed(report, redact_values):
+    return [f"{format_int_ptbr(report['rows_removed'])} linhas removidas"]
 
 
 # O log só leva metadados: os exemplos de valores (unrecognized/failed_examples)
@@ -655,7 +552,7 @@ def _log_rows_removed(flag, report):
 # ----------------------------------------------------------------
 _Operation = namedtuple(
     "_Operation",
-    ["name", "apply", "print_text", "log", "examples_field"],
+    ["name", "apply", "text", "log", "examples_field"],
     defaults=(None,),
 )
 
@@ -666,57 +563,57 @@ _COLUMN_OPERATIONS = (
     _Operation(
         "remove_columns",
         _apply_remove_columns,
-        _print_remove_columns,
+        _text_remove_columns,
         _log_remove_columns,
     ),
     _Operation(
         "rename_columns",
         _apply_rename_columns,
-        _print_rename_columns,
+        _text_rename_columns,
         _log_rename_columns,
     ),
 )
 _VALUE_OPERATIONS = (
-    _Operation("trim", _string_operator("strip_chars"), _print_nothing, _log_applied),
+    _Operation("trim", _string_operator("strip_chars"), _text_nothing, _log_applied),
     _Operation(
-        "lowercase", _string_operator("to_lowercase"), _print_nothing, _log_applied
+        "lowercase", _string_operator("to_lowercase"), _text_nothing, _log_applied
     ),
     _Operation(
-        "uppercase", _string_operator("to_uppercase"), _print_nothing, _log_applied
+        "uppercase", _string_operator("to_uppercase"), _text_nothing, _log_applied
     ),
     _Operation(
         "normalize_case",
         _string_operator("to_titlecase"),
-        _print_nothing,
+        _text_nothing,
         _log_applied,
     ),
     _Operation(
         "normalize_documents",
         _apply_normalize_documents,
-        _print_normalize_documents,
+        _text_normalize_documents,
         _log_normalize_documents,
         "unrecognized_examples",
     ),
     _Operation(
         "normalize_dates",
         _apply_normalize_dates,
-        _print_normalize_dates,
+        _text_normalize_dates,
         _log_normalize_dates,
         "unrecognized_examples",
     ),
     _Operation(
         "fix_types",
         _apply_fix_types,
-        _print_fix_types,
+        _text_fix_types,
         _log_fix_types,
         "failed_examples",
     ),
-    _Operation("fill_null", _apply_fill_null, _print_fill_null, _log_fill_null),
-    _Operation("drop_null", _apply_drop_null, _print_rows_removed, _log_rows_removed),
+    _Operation("fill_null", _apply_fill_null, _text_fill_null, _log_fill_null),
+    _Operation("drop_null", _apply_drop_null, _text_rows_removed, _log_rows_removed),
     _Operation(
         "remove_duplicates",
         _apply_remove_duplicates,
-        _print_rows_removed,
+        _text_rows_removed,
         _log_rows_removed,
     ),
 )
@@ -769,7 +666,9 @@ def diagnose(filename, sep=None, encoding=None):
     return CleanDiagnosis(loaded, findings)
 
 
-def apply_operations(filename, options, output=None, sep=None, encoding=None):
+def apply_operations(
+    filename, options, output=None, overwrite=False, sep=None, encoding=None
+):
     """Aplica as operações de `options` e grava em `output`, se informado.
 
     Levanta `CommandError` em entrada, opção ou saída inválida — antes de gravar
@@ -783,15 +682,18 @@ def apply_operations(filename, options, output=None, sep=None, encoding=None):
 
     loaded = load_input(filename, sep, encoding)
 
+    output_type = None
+    if output is not None:
+        output_type = output_file_type(output)
+        check_output(output, overwrite)
+
     reports = []
     df = _run_phase(loaded.df, options, _COLUMN_OPERATIONS, reports)
     if options.key:
         resolve_columns(df, options.key, "--key")
     df = _run_phase(df, options, _VALUE_OPERATIONS, reports)
 
-    output_type = None
     if output is not None:
-        output_type = output_file_type(output)
         write_output(df, output, output_type)
     return CleanResult(loaded, df, reports, output, output_type)
 
@@ -851,7 +753,15 @@ def result_document(result, redact_values=False):
 
 
 def print_result(result, redact_values=False):
+    # Sem --output, o stdout leva o dataset em CSV (para pipe); o relatório das
+    # operações vai para o stderr para não se misturar a ele.
+    to_stdout = result.output is None
+    data = csv_text(result.df) if to_stdout else None
+    report_file = sys.stderr if to_stdout else sys.stdout
     for report in result.reports:
-        _OPERATIONS_BY_NAME[report["operation"]].print_text(report, redact_values)
-    if result.output is None:
-        print(result.df)
+        for line in _OPERATIONS_BY_NAME[report["operation"]].text(
+            report, redact_values
+        ):
+            print(line, file=report_file)
+    if to_stdout:
+        print(data, end="")

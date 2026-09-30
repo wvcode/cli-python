@@ -13,23 +13,23 @@ Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = res
 | DT01 ✅ | `--fill-null col:valor` troca o tipo da coluna sem avisar | clean | Alta | P |
 | DT02 ✅ | Job de lint do CI quebrado (`ruff format`) | CI | Alta | P |
 | DT03 ✅ | Licença contraditória: MIT no `setup.py`, GPLv3 no `LICENSE` | Packaging | Alta | P |
-| DT04 ◐ | Servidor MCP não é thread-safe (stdout e log globais) | MCP | Alta | M |
+| DT04 ✅ | Servidor MCP não é thread-safe (stdout e log globais) | MCP | Alta | M |
 | DT05 ✅ | SQLite: identificadores sem escape e `DROP TABLE` silencioso | IO | Alta | P |
 | DT06 ✅ | Comandos-esqueleto publicados saem com sucesso sem fazer nada | CLI | Alta | P |
-| DT07 | `info` e `clean` usam heurísticas divergentes (datas e números) | quality/clean | Média | M |
+| DT07 ✅ | `info` e `clean` usam heurísticas divergentes (datas e números) | quality/clean | Média | M |
 | DT08 ✅ | Lógica de negócio acoplada a `print` | Arquitetura | Média | G |
 | DT09 ✅ | Imports duplos `try/except ImportError` em todo módulo | Arquitetura | Média | P |
 | DT10 ✅ | Carga e validação de entrada duplicadas em 4 comandos | Arquitetura | Média | M |
 | DT11 ✅ | Adicionar uma operação de `clean` exige editar 6 lugares | clean/MCP | Média | M |
-| DT12 | `clean` depende de funções privadas de `quality` | Arquitetura | Média | P |
+| DT12 ✅ | `clean` depende de funções privadas de `quality` | Arquitetura | Média | P |
 | DT13 ✅ | 23 argumentos posicionais de `main.clean` → `file_clean` | CLI | Média | P |
 | DT14 ◐ | Mensagens de erro erradas ou inconsistentes | UX | Média | P |
 | DT15 ✅ | Flags conflitantes aceitas sem erro | clean | Média | P |
 | DT16 | Log gravado em `./logs` do diretório corrente | Log | Média | P |
 | DT17 ✅ | `datatool-mcp` quebra com traceback sem o extra `[mcp]` | Packaging | Média | P |
 | DT18 | Dependências sem versão mínima; metadados divididos | Packaging | Média | P |
-| DT19 | `convert` fora do padrão dos demais comandos | convert | Baixa | M |
-| DT20 | Contrato do `Finding` ambíguo | quality | Baixa | M |
+| DT19 ✅ | `convert` fora do padrão dos demais comandos | convert | Baixa | M |
+| DT20 ✅ | Contrato do `Finding` ambíguo | quality | Baixa | M |
 | DT21 | Detecção de documentos recalculada várias vezes | Performance | Baixa | P |
 | DT22 | `utils encode/decode`: ofuscação caseira sem propósito claro | CLI | Baixa | P |
 | DT23 | Nomes confusos de módulos e funções | Legibilidade | Baixa | P |
@@ -76,6 +76,8 @@ O SDK `mcp` executa ferramentas síncronas em threads (`anyio.to_thread.run_sync
 
 **Resolução (parcial):** o problema 1 está resolvido. Com o DT08, nenhuma função de domínio imprime, e o `redirect_stdout` foi removido; o teste `TestNoStdoutWrites` garante que as ferramentas não escrevem no stdout. **Pendente:** o problema 2 (handler de log por chamada), que exige mexer em `execution_log.py`.
 
+**Resolução do problema 2:** o `run_id` e o comando da execução corrente vêm de um `contextvars.ContextVar`. Há um único handler por arquivo de log, compartilhado pelas execuções simultâneas (contagem de referências com trava) e fechado quando a última termina, e ele só aceita registros de execuções que o abriram. Cada registro sai uma vez, com o `run_id` de quem o emitiu. Os testes `test_concurrent_runs_log_each_record_once_with_own_run_id` e `TestConcurrentCalls` (MCP, 4 chamadas em paralelo) falham na versão anterior e passam na nova.
+
 ### DT05 — SQLite: identificadores sem escape e `DROP TABLE` silencioso **(reproduzido)**
 [structures/sqlite.py:33-51](../src/datatool/structures/sqlite.py#L33-L51)
 
@@ -106,6 +108,15 @@ Com `data = 20240115, 2024-01-16, ...` e `valor = "R$ 1.234,56", ...`:
 - `info` não acusa `valor` como número em texto (a regex não trata `R$`), mas o `clean --fix-types` converte a coluna.
 
 **Correção:** um único módulo de inferência (formatos de data e parser numérico), usado pelo diagnóstico e pela correção. Acrescentar um teste que garanta que toda sugestão do `info` tem efeito no `clean`.
+
+**Resolução:** o novo `inference.py` é a fonte única para datas (uma lista de formatos com `strptime`, que valida a data, mais um pré-filtro por regex para não pagar o `strptime` em colunas que nem têm forma de data), números em texto (`parse_number` e `numeric_text_columns`) e colunas de CPF/CNPJ. Diagnóstico e correção usam as mesmas funções. Resultados:
+- `R$ 1.234,56` agora aparece no `info`;
+- `yyyymmdd` deixou de contar como data no `info`, alinhado à decisão da spec 009;
+- datas inválidas (`20261301`) não contam mais como formato: em `examples/clientes.csv`, de 5 para 4 formatos;
+- códigos com zero à esquerda (CEP em texto) não são mais apontados como números, porque o `--fix-types` os ignora;
+- colunas de data não são convertidas pelo `--fix-types`.
+
+`TestDiagnosisMatchesCorrection` roda cada sugestão do `info` no `clean` e exige efeito nas mesmas colunas; os 5 testes falham na versão anterior. Custo: o `info` num CSV de 200 mil linhas e 10 colunas foi de 0,30 s para 0,58 s.
 
 ### DT08 — Lógica de negócio acoplada a `print`
 `info()`, `profile()`, `clean()` e `convert()` validam, calculam, imprimem texto **e** montam o JSON, devolvendo `(exit_code, document)`. Consequências: o MCP precisa abafar o stdout (DT04), `convert` monta um documento que nunca imprime, e não há API Python reutilizável.
@@ -142,6 +153,8 @@ Nova operação = `_apply_*` + a tupla `has_operations` ([clean.py:726](../src/d
 [clean.py:11-23](../src/datatool/clean.py#L11-L23) importa `_DATE_MATCH_RATIO`, `_NUMERIC_MATCH_RATIO`, `_document_shape_for`, `_mask_document`, `_sample_values` e `_validate_document`. A fronteira entre os módulos é só nominal.
 
 **Correção:** extrair `documents.py` (CPF/CNPJ) e o módulo de inferência de DT07, com API pública. `format_int_ptbr`, usado por todos os comandos, vai para um módulo de formatação.
+
+**Resolução:** `documents.py` (formato, dígito verificador, máscara e contagem de CPF/CNPJ), `inference.py` (DT07) e `formatting.py`, todos com API pública. O `clean` não importa mais nenhum nome com `_` de outro módulo.
 
 ### DT13 — 23 argumentos posicionais em `main.clean` → `file_clean`
 [main.py:230-254](../src/datatool/main.py#L230-L254) (e `profile`, [main.py:145-154](../src/datatool/main.py#L145-L154)). Vários são `str | None`, então trocar a ordem de dois deles não gera erro, só comportamento errado.
@@ -193,7 +206,14 @@ O entry point é instalado sempre ([setup.py:39](../setup.py#L39)), mas `mcp` é
 - sem destino, faz `print(df)`, que o polars trunca. O mesmo acontece no `clean` sem `--output`. Não serve para pipe;
 - tem atribuições mortas (`df = None`, `df2 = None`).
 
-**Atualização:** as atribuições mortas saíram com o DT08. O resto continua pendente.
+**Atualização:** as atribuições mortas saíram com o DT08.
+
+**Resolução:**
+- `convert --format json` imprime o documento que já existia para o MCP (`source`/`target`). Ele exige `TO_FILENAME` e recusa `--show-stats`, que não tem lugar no JSON.
+- `convert` e `clean --output` recusam um destino existente (exit 2) sem `--overwrite`, como o MCP já fazia. A checagem é feita antes de processar. Com `--overwrite`, o destino pode ser o próprio arquivo de entrada (limpeza no lugar); o MCP continua proibindo isso.
+- A releitura do `--show-stats` falha com mensagem clara (exit 1) em vez de traceback.
+- Sem destino, `convert` e `clean` imprimem o dataset inteiro em CSV no stdout. As mensagens (estatísticas do `--show-stats`, relatório das operações do `clean`) vão para o stderr, e um dado que não cabe em CSV (listas, structs) vira erro claro. Para isso, os formatadores de relatório do `clean` passaram a devolver linhas em vez de imprimir.
+- **Quebra de compatibilidade:** scripts que regravam o mesmo destino precisam de `--overwrite`, e quem lia a prévia do polars no stdout passa a receber CSV.
 
 ### DT20 — Contrato do `Finding` ambíguo
 [quality.py:8](../src/datatool/quality.py#L8):
@@ -202,8 +222,12 @@ O entry point é instalado sempre ([setup.py:39](../setup.py#L39)), mas `mcp` é
 
 Quem consome o JSON (schema 019) não sabe o que `count` significa.
 
+**Resolução:** o `Finding` ganhou `count_unit` (`rows`/`values`/`formats`/`variants`), que também vai no JSON como campo aditivo, sem mudar `schema_version`. `message` agora é sempre um resumo, e os valores ficam em `examples`. Com isso, `finding_to_dict` perdeu o caso especial, e `display_message` lista `examples` para qualquer categoria. A saída de texto é idêntica; a tabela de `count` da spec 019 inclui a unidade e as categorias de CPF/CNPJ. O `2` de `document_format_variance` continua fixo, mas agora documentado: são sempre dois formatos, com e sem máscara.
+
 ### DT21 — Detecção de documentos recalculada várias vezes
 `analyze()` chama `detect_documents` (que chama `detect_document_columns`) e depois chama `detect_document_columns` de novo ([quality.py:614-615](../src/datatool/quality.py#L614-L615)). `--fix-types` repete o cálculo ([clean.py:329](../src/datatool/clean.py#L329)). Cada chamada valida o dígito verificador de uma amostra de todas as colunas. Hoje o custo é pequeno, mas cresce com a largura do arquivo.
+
+**Atualização (DT07):** o problema mudou de lugar mas continua. `inference.numeric_text_columns` calcula `document_columns` e `date_columns` a cada chamada, e `analyze` também calcula as formas de data e as colunas de documento nos próprios detectores. Um cache por DataFrame, ou uma classificação única das colunas passada adiante, resolveria.
 
 ### DT22 — `utils encode/decode`: ofuscação caseira
 [utils.py](../src/datatool/utils.py) faz base64 com rotação de bytes, sem documentação de propósito. Não é criptografia; se a ideia é usar isso no licenciamento (spec 016), não protege nada. `encode("")` sai com exit 2. **Decidir:** remover, ou documentar e testar o caso de uso.
@@ -237,6 +261,6 @@ Quase nenhuma função tem anotação de tipo, e o ruff seleciona só `E, F, I`.
 ## Ordem sugerida
 
 1. ~~**Rápidos e de alto impacto:** DT02, DT03, DT01, DT05, DT06, DT14, DT15, DT17, DT27.~~ Feito (DT14 em parte).
-2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13.~~ Feito. Destravados: o resto do DT04 (log) e o DT19.
-3. **Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.
+2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13, e depois DT04 e DT19.~~ Feito.
+3. ~~**Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.~~ Feito.
 4. **Higiene contínua:** DT16, DT18, DT24, DT25, DT26.

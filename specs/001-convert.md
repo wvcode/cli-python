@@ -13,7 +13,7 @@ Leitura/gravação de SQLite usa o módulo `sqlite3` da stdlib (sem dependência
 datatool convert vendas.csv vendas.parquet
 datatool convert vendas.xlsx vendas.csv
 ```
-`to_filename` é um argumento posicional opcional (se omitido, o resultado é impresso no stdout). O formato de entrada/saída é inferido pela extensão do arquivo; `--from-type`/`--to-type` continuam disponíveis como fallback para quando a extensão não é reconhecida ou precisa ser sobrescrita.
+`to_filename` é um argumento posicional opcional (se omitido, o resultado é impresso no stdout — desde o débito técnico DT19, em CSV completo, e não mais a prévia truncada do polars; ver [debito-tecnico.md](debito-tecnico.md)). O formato de entrada/saída é inferido pela extensão do arquivo; `--from-type`/`--to-type` continuam disponíveis como fallback para quando a extensão não é reconhecida ou precisa ser sobrescrita.
 
 ## Critérios de aceite
 - [x] Converte corretamente entre CSV, JSON, JSONL, Excel (xlsx), Parquet e SQLite, sem perda de linhas/colunas

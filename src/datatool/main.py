@@ -41,6 +41,13 @@ EncodingOption = Annotated[
         help="Encoding do CSV de entrada (ex.: cp1252, latin-1). Se omitido, detecta.",
     ),
 ]
+OverwriteOption = Annotated[
+    bool,
+    typer.Option(
+        "--overwrite",
+        help="Permite substituir um arquivo de destino que já existe.",
+    ),
+]
 RedactValuesOption = Annotated[
     bool,
     typer.Option(
@@ -60,19 +67,23 @@ app.add_typer(utils_app, name="utils")
 def _emit(command, output_format, run, to_document, print_text):
     """Roda o comando e escreve o resultado (texto ou JSON) ou o erro no stdout.
 
-    `run` levanta `CommandError` em falhas esperadas; qualquer outra exceção
-    sobe para o `@logged`, que a registra com traceback.
+    `run` (e a renderização, ao gerar o CSV do stdout) levanta `CommandError`
+    em falhas esperadas; qualquer outra exceção sobe para o `@logged`, que a
+    registra com traceback.
     """
     try:
         result = run()
+        if output_format == OutputFormat.JSON:
+            print_document(to_document(result))
+        else:
+            print_text(result)
     except CommandError as error:
-        fail(output_format, command, error)
-        raise typer.Exit(code=error.exit_code)
+        _fail(command, output_format, error)
 
-    if output_format == OutputFormat.JSON:
-        print_document(to_document(result))
-    else:
-        print_text(result)
+
+def _fail(command, output_format, error):
+    fail(output_format, command, error)
+    raise typer.Exit(code=error.exit_code)
 
 
 def _not_implemented(command):
@@ -93,12 +104,30 @@ def convert(
     from_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
     to_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
     show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
+    overwrite: OverwriteOption = False,
+    output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
 ):
+    # No JSON, o stdout é só o relatório: o dataset precisa ir para um arquivo,
+    # e as estatísticas de --show-stats já estão em `source`/`target`.
+    if output_format == OutputFormat.JSON:
+        if to_filename is None:
+            _fail(
+                "convert",
+                output_format,
+                CommandError("--format json requires TO_FILENAME", 2),
+            )
+        if show_stats:
+            _fail(
+                "convert",
+                output_format,
+                CommandError("--show-stats is not available with --format json", 2),
+            )
+
     _emit(
         "convert",
-        OutputFormat.TEXT,
+        output_format,
         lambda: convert_command.convert(
             filename,
             to_filename=to_filename,
@@ -106,9 +135,10 @@ def convert(
             to_type=to_type,
             sep=sep,
             encoding=encoding,
+            overwrite=overwrite,
             reload_target=show_stats,
         ),
-        to_document=None,
+        to_document=convert_command.to_document,
         print_text=lambda result: convert_command.print_text(result, show_stats),
     )
 
@@ -249,6 +279,7 @@ def clean(
         typer.Option(help="Colunas a remover, separadas por vírgula"),
     ] = None,
     output: Annotated[Optional[str], typer.Option("--output")] = None,
+    overwrite: OverwriteOption = False,
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
@@ -290,14 +321,20 @@ def clean(
 
     # No JSON, o stdout é só o relatório: o DataFrame precisa ir para um arquivo.
     if output_format == OutputFormat.JSON and output is None:
-        fail(output_format, "clean", CommandError("--format json requires --output", 2))
-        raise typer.Exit(code=2)
+        _fail(
+            "clean", output_format, CommandError("--format json requires --output", 2)
+        )
 
     _emit(
         "clean",
         output_format,
         lambda: clean_command.apply_operations(
-            filename, options, output=output, sep=sep, encoding=encoding
+            filename,
+            options,
+            output=output,
+            overwrite=overwrite,
+            sep=sep,
+            encoding=encoding,
         ),
         to_document=lambda result: clean_command.result_document(result, redact_values),
         print_text=lambda result: clean_command.print_result(result, redact_values),

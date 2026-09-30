@@ -1,8 +1,10 @@
 import json
 import os
+import shlex
 import shutil
 import sqlite3
 import tempfile
+import threading
 from contextlib import contextmanager
 from datetime import date
 
@@ -145,13 +147,132 @@ class TestConvertCommand:
             assert (
                 runner.invoke(app, ["convert", "dados.csv", "dados.db"]).exit_code == 0
             )
-            result = runner.invoke(app, ["convert", "lista.json", "dados.db"])
+            result = runner.invoke(
+                app, ["convert", "lista.json", "dados.db", "--overwrite"]
+            )
             assert result.exit_code == 1
             assert "Could not save file dados.db as sqlite:" in result.stdout
 
             runner.invoke(app, ["convert", "dados.db", "volta.csv"])
             with open("volta.csv", encoding="utf8") as f:
                 assert f.read() == "A,B\n1,x\n2,y\n"
+
+
+class TestOutputHandling:
+    ROWS = "".join(f"{i},nome {i}\n" for i in range(30))
+
+    def _write_input(self):
+        with open("dados.csv", "w", encoding="utf8") as f:
+            f.write("id,nome\n" + self.ROWS)
+
+    def test_convert_without_target_prints_whole_dataset_as_csv(self, runner):
+        with isolated_filesystem():
+            self._write_input()
+            result = runner.invoke(app, ["convert", "dados.csv"])
+            assert result.exit_code == 0
+            # CSV completo (30 linhas), não a prévia truncada do polars
+            assert result.stdout == "id,nome\n" + self.ROWS
+
+    def test_convert_show_stats_without_target_goes_to_stderr(self, runner):
+        with isolated_filesystem():
+            self._write_input()
+            result = runner.invoke(app, ["convert", "dados.csv", "--show-stats"])
+            assert result.exit_code == 0
+            assert result.stdout == "id,nome\n" + self.ROWS
+            assert "Source loaded" in result.stderr
+            assert "(30, 2)" in result.stderr
+
+    def test_clean_without_output_prints_csv_and_reports_to_stderr(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\nAna\nBia\n")
+            result = runner.invoke(app, ["clean", "dados.csv", "--remove-duplicates"])
+            assert result.exit_code == 0
+            assert result.stdout == "nome\nAna\nBia\n"
+            assert "1 linhas removidas" in result.stderr
+
+    def test_nested_data_to_stdout_is_a_clear_error(self, runner):
+        with isolated_filesystem():
+            with open("lista.json", "w", encoding="utf8") as f:
+                f.write('[{"a": [1, 2]}]')
+            result = runner.invoke(app, ["convert", "lista.json"])
+            assert result.exit_code == 1
+            assert "Could not write the result as CSV to stdout" in result.stdout
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["convert", "dados.csv", "saida.csv"],
+            ["clean", "dados.csv", "--trim", "--output", "saida.csv"],
+        ],
+    )
+    def test_refuses_to_overwrite_existing_output(self, runner, args):
+        with isolated_filesystem():
+            self._write_input()
+            with open("saida.csv", "w", encoding="utf8") as f:
+                f.write("original\n")
+
+            result = runner.invoke(app, args)
+            assert result.exit_code == 2
+            assert "Output path already exists: saida.csv" in result.stdout
+            assert "--overwrite" in result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "original\n"
+
+            result = runner.invoke(app, [*args, "--overwrite"])
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "id,nome\n" + self.ROWS
+
+    def test_show_stats_reload_failure_is_a_clear_error(self, runner, monkeypatch):
+        def broken_read(*args, **kwargs):
+            raise ValueError("arquivo corrompido")
+
+        monkeypatch.setattr("datatool.convert.read_file", broken_read)
+        with isolated_filesystem():
+            self._write_input()
+            result = runner.invoke(
+                app, ["convert", "dados.csv", "saida.json", "--show-stats"]
+            )
+            assert result.exit_code == 1
+            assert "Saved saida.json, but could not reload it" in result.stdout
+            assert "arquivo corrompido" in result.stdout
+
+    def test_convert_format_json(self, runner):
+        with isolated_filesystem():
+            self._write_input()
+            result = runner.invoke(
+                app, ["convert", "dados.csv", "saida.parquet", "--format", "json"]
+            )
+            assert result.exit_code == 0
+            document = json.loads(result.stdout)
+            assert document["command"] == "convert"
+            assert document["status"] == "ok"
+            assert document["source"]["format"] == "csv"
+            assert document["source"]["rows"] == 30
+            assert document["target"]["path"] == "saida.parquet"
+            assert document["target"]["format"] == "parquet"
+
+    @pytest.mark.parametrize(
+        "args, message",
+        [
+            (["convert", "dados.csv"], "--format json requires TO_FILENAME"),
+            (
+                ["convert", "dados.csv", "saida.json", "--show-stats"],
+                "--show-stats is not available with --format json",
+            ),
+            (["convert", "nao_existe.csv", "saida.json"], "does not exist"),
+        ],
+    )
+    def test_convert_format_json_errors(self, runner, args, message):
+        with isolated_filesystem():
+            self._write_input()
+            result = runner.invoke(app, [*args, "--format", "json"])
+            assert result.exit_code == 2
+            document = json.loads(result.stdout)
+            assert document["status"] == "error"
+            assert message in document["error"]["message"]
+            assert not os.path.exists("saida.json")
 
 
 class TestInfoCommand:
@@ -635,7 +756,7 @@ class TestCleanRemoveDuplicates:
 
             result = runner.invoke(app, ["clean", "dados.csv", "--remove-duplicates"])
             assert result.exit_code == 0
-            assert "0 linhas removidas" in result.stdout
+            assert "0 linhas removidas" in result.stderr
 
     def test_combines_with_string_operators(self, runner):
         with isolated_filesystem():
@@ -973,7 +1094,7 @@ class TestCleanNormalizeDates:
 
             result = runner.invoke(app, ["clean", "dados.csv", "--normalize-dates"])
             assert result.exit_code == 0
-            assert "Nenhuma coluna de data encontrada" in result.stdout
+            assert "Nenhuma coluna de data encontrada" in result.stderr
 
     def test_unknown_date_column(self, runner):
         with isolated_filesystem():
@@ -1121,7 +1242,7 @@ class TestCleanFixTypes:
 
             result = runner.invoke(app, ["clean", "dados.json", "--fix-types"])
             assert result.exit_code == 0
-            assert "Nenhuma coluna numérica armazenada como texto" in result.stdout
+            assert "Nenhuma coluna numérica armazenada como texto" in result.stderr
 
     def test_no_numeric_text_columns(self, runner):
         with isolated_filesystem():
@@ -1130,7 +1251,7 @@ class TestCleanFixTypes:
 
             result = runner.invoke(app, ["clean", "dados.csv", "--fix-types"])
             assert result.exit_code == 0
-            assert "Nenhuma coluna numérica armazenada como texto" in result.stdout
+            assert "Nenhuma coluna numérica armazenada como texto" in result.stderr
 
 
 class TestCleanColumns:
@@ -1542,7 +1663,7 @@ class TestCleanNormalizeDocuments:
                 app, ["clean", "dados.csv", "--normalize-documents", "digits"]
             )
             assert result.exit_code == 0
-            assert "Nenhuma coluna de documento encontrada" in result.stdout
+            assert "Nenhuma coluna de documento encontrada" in result.stderr
 
     def test_fix_types_ignores_document_columns(self, runner):
         with isolated_filesystem():
@@ -1556,7 +1677,7 @@ class TestCleanNormalizeDocuments:
 
             result = runner.invoke(app, ["clean", "dados.json", "--fix-types"])
             assert result.exit_code == 0
-            assert "Nenhuma coluna numérica armazenada como texto" in result.stdout
+            assert "Nenhuma coluna numérica armazenada como texto" in result.stderr
 
     def test_info_suggests_normalize_documents_on_format_variance(self, runner):
         with isolated_filesystem():
@@ -1589,6 +1710,7 @@ class TestCleanNormalizeDocuments:
                 "category": "document_invalid",
                 "column": "cpf",
                 "count": 1,
+                "count_unit": "values",
                 "message": "1 CPFs com dígito verificador inválido",
             } in document["problems"]
 
@@ -1924,6 +2046,137 @@ def _load_json(stdout):
     return json.loads(stdout, parse_constant=reject_constant)
 
 
+EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), "..", "examples")
+
+# Colunas que antes o diagnóstico e a correção enxergavam de jeitos diferentes:
+# "R$" (só o clean lia), "yyyymmdd" misturado (só o info via como data; pela
+# spec 009 nenhum dos dois o reconhece), milhar americano e datas dd/mm
+# misturadas com ISO.
+_MIXED_CSV = (
+    "valor,data,preco_us,quando\n"
+    '"R$ 1.234,56",20240115,"1,234.56",01/02/2024\n'
+    '"R$ 10,00",2024-01-16,"2,000.00",2024-02-03\n'
+    '"R$ 3,50",20240117,15.25,03/04/2024\n'
+    '"R$ 7,25",20240118,7.00,2024-05-06\n'
+)
+
+
+def _operation_effect(operation):
+    """Colunas (ou "linhas") em que a operação do clean mudou algo."""
+    name = operation["operation"]
+    if name in ("remove_duplicates", "drop_null"):
+        return {"linhas"} if operation["rows_removed"] else set()
+    if name == "fix_types":
+        return {column["column"] for column in operation["columns"]}
+    return {column["column"] for column in operation["columns"] if column["normalized"]}
+
+
+class TestDiagnosisMatchesCorrection:
+    @pytest.mark.parametrize("source", ["clientes.csv", "misto.csv"])
+    def test_every_info_suggestion_has_effect_on_the_reported_columns(
+        self, runner, source
+    ):
+        with isolated_filesystem():
+            if source == "misto.csv":
+                with open(source, "w", encoding="utf8") as f:
+                    f.write(_MIXED_CSV)
+            else:
+                shutil.copy(os.path.join(EXAMPLES_DIR, source), source)
+
+            info = _load_json(
+                runner.invoke(app, ["info", source, "--format", "json"]).stdout
+            )
+            assert info["suggestions"]
+            for problem in info["problems"]:
+                assert problem["count_unit"] in (
+                    "rows",
+                    "values",
+                    "formats",
+                    "variants",
+                )
+
+            for suggestion in info["suggestions"]:
+                flags = shlex.split(suggestion["command"])[3:]
+                result = runner.invoke(
+                    app,
+                    [
+                        "clean",
+                        source,
+                        *flags,
+                        "--output",
+                        "saida.csv",
+                        "--overwrite",
+                        "--format",
+                        "json",
+                    ],
+                )
+                assert result.exit_code == 0, result.stdout
+                effect = _operation_effect(_load_json(result.stdout)["operations"][0])
+                assert effect, suggestion["command"]
+
+                # Datas e tipos: as colunas apontadas pelo info são exatamente
+                # as que o clean corrige.
+                reported = {
+                    problem["column"]
+                    for problem in info["problems"]
+                    if problem["category"] == suggestion["category"]
+                }
+                if suggestion["category"] in ("dates", "types"):
+                    assert reported == effect, suggestion["command"]
+
+    def test_mixed_columns_are_classified_the_same_way(self, runner):
+        with isolated_filesystem():
+            with open("misto.csv", "w", encoding="utf8") as f:
+                f.write(_MIXED_CSV)
+
+            info = _load_json(
+                runner.invoke(app, ["info", "misto.csv", "--format", "json"]).stdout
+            )
+            by_category = {}
+            for problem in info["problems"]:
+                by_category.setdefault(problem["category"], set()).add(
+                    problem["column"]
+                )
+            assert by_category["types"] == {"valor"}
+            assert by_category["dates"] == {"quando"}
+
+            result = runner.invoke(
+                app,
+                ["clean", "misto.csv", "--normalize-dates", "--fix-types"],
+            )
+            assert result.exit_code == 0
+            assert result.stdout.splitlines()[1:] == [
+                '1234.56,20240115,"1,234.56",2024-02-01',
+                '10.0,2024-01-16,"2,000.00",2024-02-03',
+                "3.5,20240117,15.25,2024-04-03",
+                "7.25,20240118,7.00,2024-05-06",
+            ]
+
+    def test_codes_with_leading_zeros_are_not_reported_as_numeric(self, runner):
+        # JSON mantém o CEP como texto (no CSV o polars já o leria como número).
+        # O clean não converte códigos com zero à esquerda, então o info não
+        # pode sugerir --fix-types para eles.
+        with isolated_filesystem():
+            with open("dados.json", "w", encoding="utf8") as f:
+                f.write('[{"cep": "01001000"}, {"cep": "90010000"}]')
+
+            info = _load_json(
+                runner.invoke(app, ["info", "dados.json", "--format", "json"]).stdout
+            )
+            assert not [p for p in info["problems"] if p["category"] == "types"]
+            assert not info["suggestions"]
+
+    def test_invalid_date_is_not_counted_as_a_date_format(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("data\n2024-01-15\n2024-02-20\n20261301\n")
+
+            info = _load_json(
+                runner.invoke(app, ["info", "dados.csv", "--format", "json"]).stdout
+            )
+            assert not [p for p in info["problems"] if p["category"] == "dates"]
+
+
 class TestJsonOutput:
     def test_info_json(self, runner):
         with isolated_filesystem():
@@ -1947,6 +2200,7 @@ class TestJsonOutput:
                 "category": "nulls",
                 "column": "email",
                 "count": 2,
+                "count_unit": "values",
                 "message": '2 valores nulos em "email"',
             } in document["problems"]
             assert {
@@ -2036,6 +2290,7 @@ class TestJsonOutput:
                     "category": "case_inconsistency",
                     "column": "cidade",
                     "count": 2,
+                    "count_unit": "variants",
                     "message": "2 variações de capitalização",
                     "examples": ["PORTO ALEGRE", "Porto Alegre"],
                 }
@@ -2281,6 +2536,40 @@ class TestCsvDetection:
 
 
 class TestExecutionLog:
+    def test_concurrent_runs_log_each_record_once_with_own_run_id(self):
+        # O servidor MCP roda ferramentas em paralelo, em threads, no mesmo
+        # logger: cada registro tem que sair uma vez, com o run_id de quem o
+        # emitiu. A barreira garante que as duas execuções se sobreponham.
+        barrier = threading.Barrier(2, timeout=5)
+
+        def make_run(name):
+            @execution_log.logged(name)
+            def run():
+                barrier.wait()
+                execution_log.log.info("mensagem de %s", name)
+                barrier.wait()
+
+            return run
+
+        with isolated_filesystem():
+            threads = [
+                threading.Thread(target=make_run(name)) for name in ("cmd_a", "cmd_b")
+            ]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join()
+
+            lines = _read_log().splitlines()
+            assert len(lines) == 6  # início, mensagem e fim de cada execução
+            for name in ("cmd_a", "cmd_b"):
+                own = [line for line in lines if f"] {name}: " in line]
+                assert len(own) == 3
+                assert len({line.split("[")[1].split("]")[0] for line in own}) == 1
+                assert sum(f"mensagem de {name}" in line for line in lines) == 1
+                assert any(f"] {name}: mensagem de {name}" in line for line in own)
+            assert execution_log._handlers == {}
+
     def test_start_and_end_share_run_id(self, runner):
         with isolated_filesystem():
             _write_bytes("dados.csv", "nome\nAna\n")

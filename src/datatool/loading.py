@@ -65,16 +65,36 @@ def output_file_type(filename, file_type=None, type_option=None):
     return _resolve_file_type(filename, file_type, type_option)
 
 
-def write_output(df, filename, file_type):
+def check_output(filename, overwrite=False):
+    """Valida o destino antes de processar, para falhar antes do trabalho."""
+    if os.path.exists(filename) and not overwrite:
+        raise CommandError(
+            f"Output path already exists: {filename}. Use --overwrite to replace it.",
+            2,
+        )
     output_dir = os.path.dirname(filename) or "."
     if not os.access(output_dir, os.W_OK):
         raise CommandError(f"The output path {filename} cannot be written.", 3)
 
+
+def write_output(df, filename, file_type):
     try:
         save_file(df, file_type, filename)
     except Exception as error:
         raise CommandError(
             f"Could not save file {filename} as {file_type.value}: {error}", 1
+        ) from error
+
+
+def csv_text(df):
+    """O dataset inteiro em CSV, para o stdout quando não há arquivo de destino."""
+    try:
+        return df.write_csv()
+    except Exception as error:
+        raise CommandError(
+            f"Could not write the result as CSV to stdout: {error}. "
+            "Pass an output file instead.",
+            1,
         ) from error
 
 

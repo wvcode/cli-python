@@ -64,10 +64,10 @@ datatool clean vendas.csv --fix-types --remove-duplicates --output limpo.parquet
   "status": "ok",
   "file": {"path": "examples/clientes.csv", "format": "csv", "rows": 10, "columns": 6, "size_bytes": 711},
   "problems": [
-    {"category": "nulls", "column": "email", "count": 3, "message": "3 valores nulos em \"email\""},
-    {"category": "duplicates", "column": null, "count": 1, "message": "1 linhas duplicadas"},
-    {"category": "dates", "column": "data_nascimento", "count": 5, "message": "\"data_nascimento\" contém 5 formatos de data diferentes"},
-    {"category": "types", "column": "idade", "count": 9, "message": "\"idade\" está armazenada como texto mas parece numérica"}
+    {"category": "nulls", "column": "email", "count": 3, "count_unit": "values", "message": "3 valores nulos em \"email\""},
+    {"category": "duplicates", "column": null, "count": 1, "count_unit": "rows", "message": "1 linhas duplicadas"},
+    {"category": "dates", "column": "data_nascimento", "count": 4, "count_unit": "formats", "message": "\"data_nascimento\" contém 4 formatos de data diferentes"},
+    {"category": "types", "column": "idade", "count": 9, "count_unit": "values", "message": "\"idade\" está armazenada como texto mas parece numérica"}
   ],
   "suggestions": [
     {"category": "types", "label": "Corrigir tipos", "command": "datatool clean examples/clientes.csv --fix-types"},
@@ -80,19 +80,21 @@ datatool clean vendas.csv --fix-types --remove-duplicates --output limpo.parquet
 
 Sem problemas, `problems` e `suggestions` são listas vazias.
 
-**Significado de `count` por categoria** (é o mesmo número que já existe nos `Finding`s):
+**Significado de `count` por categoria** (é o mesmo número que já existe nos `Finding`s). Desde o débito técnico DT20 ([debito-tecnico.md](debito-tecnico.md)), cada problema traz também `count_unit`, que diz o que `count` conta: `rows` (linhas), `values` (valores de célula), `formats` (formatos distintos) ou `variants` (variações de capitalização). O campo é aditivo, então `schema_version` continua 1. `message` é sempre um resumo sem valores de célula; os valores, quando há, ficam em `examples`.
 
-| `category` | Origem | `column` | `count` |
-|------------|--------|----------|---------|
-| `nulls` | info | coluna | valores nulos |
-| `duplicates` | info | `null` | linhas inteiras duplicadas |
-| `dates` | info | coluna | formatos de data distintos |
-| `types` | info | coluna | valores não nulos da coluna inteira que parecem numéricos (ver abaixo) |
-| `invalid_emails` | clean | coluna | valores com e-mail inválido |
-| `phone_format_variance` | clean | coluna | formatos de telefone distintos |
-| `whitespace` | clean | coluna | valores com espaços nas bordas |
-| `key_duplicates` | clean | coluna | valores duplicados numa coluna que parece chave |
-| `case_inconsistency` | clean | coluna | variações de capitalização |
+| `category` | Origem | `column` | `count` | `count_unit` |
+|------------|--------|----------|---------|--------------|
+| `nulls` | info | coluna | valores nulos | `values` |
+| `duplicates` | info | `null` | linhas inteiras duplicadas | `rows` |
+| `dates` | info | coluna | formatos de data distintos | `formats` |
+| `types` | info | coluna | valores não nulos da coluna inteira que parecem numéricos (ver abaixo) | `values` |
+| `invalid_emails` | clean | coluna | valores com e-mail inválido | `values` |
+| `phone_format_variance` | clean | coluna | formatos de telefone distintos | `formats` |
+| `whitespace` | clean | coluna | valores com espaços nas bordas | `values` |
+| `key_duplicates` | clean | coluna | valores duplicados numa coluna que parece chave | `values` |
+| `case_inconsistency` | clean | coluna | variações de capitalização | `variants` |
+| `document_invalid`, `document_all_same`, `document_out_of_format`, `document_numeric_column` | info, clean | coluna | valores de CPF/CNPJ com o problema ([018](018-cpf-cnpj-validacao.md)) | `values` |
+| `document_format_variance` | info, clean | coluna | formatos (com e sem máscara, sempre 2) | `formats` |
 
 **`types`**: hoje `detect_numeric_as_text` guarda em `count` quantos valores **da amostra** (até 2.000) parecem numéricos, um número que depende do tamanho do arquivo e não significa nada para quem consome. Nesta spec, `count` passa a ser o total da coluna inteira. A amostra continua sendo usada só para **decidir** se a coluna é reportada; a contagem é feita depois, sobre todos os valores não nulos. O modo texto não mostra esse número, então não muda.
 
@@ -209,7 +211,7 @@ datatool clean clientes.csv --redact-values
 Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestRedactValues`). O comportamento padrão (`--redact-values` omitido) foi comparado com a versão anterior à extensão e é idêntico.
 
 #### Nota de implementação
-- [src/datatool/quality.py](../src/datatool/quality.py) ganhou `display_message(finding, redact_values)`, usada por `info`/`clean` no modo texto no lugar de `finding.message` direto — só muda o resultado para `case_inconsistency`, reaproveitando o mesmo resumo (`_case_inconsistency_summary`) que `finding_to_dict` já calculava para o JSON. `finding_to_dict` ganhou o parâmetro `redact_values` (padrão `False`) para omitir `examples`.
+- *(Atualizado pelo DT20: `case_inconsistency` passou a guardar o resumo em `message` e as variações em `examples`; `display_message` lista os `examples` no modo texto, sem caso especial por categoria, e `finding_to_dict` usa `message` direto. A saída de texto não mudou.)* [src/datatool/quality.py](../src/datatool/quality.py) ganhou `display_message(finding, redact_values)`, usada por `info`/`clean` no modo texto no lugar de `finding.message` direto — só muda o resultado para `case_inconsistency`, reaproveitando o mesmo resumo (`_case_inconsistency_summary`) que `finding_to_dict` já calculava para o JSON. `finding_to_dict` ganhou o parâmetro `redact_values` (padrão `False`) para omitir `examples`.
 - Em `clean.py`, a redação das operações (`normalize_dates`/`fix_types`/`normalize_documents`) é feita em dois pontos independentes, sem tocar `_apply_*`: `_print_examples(examples, distinct_count, redact_values)` imprime `"(valores ocultos por --redact-values)"` em vez da lista, no modo texto; `_redact_report(report)` devolve uma cópia do relatório com os campos de exemplo (`unrecognized_examples`/`failed_examples`) esvaziados, aplicada só ao montar o JSON final (`operations`). O relatório "cru" (com os valores reais) continua sendo o que roda internamente e o que vai para o log — que já os omitia antes desta extensão.
 - `--redact-values` não entra em `has_operations`: é um modificador de relatório, nunca conta como operação de dado, então `clean arquivo.csv --redact-values` sozinho continua caindo no modo diagnóstico.
 - Log: sem mudança — o log de [017](017-csv-delimitador-encoding.md) já nunca incluía exemplos de valor, com ou sem `--redact-values`.
@@ -232,7 +234,7 @@ Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestRedactValu
 ## Notas originais do desenho
 - **Separar cálculo de apresentação no `clean`.** Hoje cada `_apply_*` de [src/datatool/clean.py](../src/datatool/clean.py) faz `print` do próprio resumo. Eles passam a devolver `(df, relatório)`, em que o relatório é um dicionário no formato da tabela de `operations`. Um renderizador de texto produz exatamente as linhas de hoje, e um de JSON serializa a lista. [src/datatool/info.py](../src/datatool/info.py) e [src/datatool/profiler.py](../src/datatool/profiler.py) já calculam antes de imprimir; só precisam do ramo JSON.
 - **Mensagens de erro:** os pontos que hoje fazem `print(mensagem)` e `return código` passam a chamar um helper que imprime em texto ou em JSON, conforme o formato.
-- **`types`:** em `detect_numeric_as_text` ([src/datatool/quality.py](../src/datatool/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.
+- **`types`:** em `detect_numeric_as_text` ([src/datatool/quality.py](../src/datatool/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. *(Atualizado pelo DT07: a contagem usa `inference.parse_number`, o mesmo parser do `clean --fix-types`.)* Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.
 - **`Finding`:** ganha um campo opcional `examples` (padrão vazio), usado só por `case_inconsistency`. A `message` de texto desse detector continua sendo montada como hoje, para não mudar o modo texto.
 - **Serialização:** `json.dumps(..., ensure_ascii=False, indent=2, default=...)`, com um `default` que trata `date`/`datetime` (ISO) e cai em `str()` para o resto. `NaN`/`inf` tratados antes (o `json` da stdlib gera `NaN`, que não é JSON válido).
 - **`--format`:** pode reaproveitar o padrão de `Enum` já usado em [src/datatool/structures/](../src/datatool/structures/) (`FileType`, `EncodingType`) para o Typer validar os valores.
