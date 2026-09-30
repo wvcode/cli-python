@@ -1,5 +1,0 @@
-typer
-typing_extensions
-polars
-fastexcel
-xlsxwriter
