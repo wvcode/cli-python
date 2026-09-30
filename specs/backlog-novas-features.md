@@ -112,7 +112,7 @@ datatool convert relatorio.xlsx vendas.csv --sheet "Vendas 2025"
 datatool info relatorio.xlsx --all-sheets     # diagnóstico de cada aba
 ```
 
-**Relação com o que existe.** A spec [013](013-excel-inspect-auto.md) prevê "múltiplas abas" para o `inspect` Pro; este item é a versão básica (Community) que o `013` reaproveitaria. O comando-esqueleto `excel --workbooks` também aponta nessa direção.
+**Relação com o que existe.** A spec [013](013-excel-inspect-auto.md) prevê "múltiplas abas" para o `inspect` Pro; este item é a versão básica (Community) que o `013` reaproveitaria. O comando-esqueleto `excel --workbooks`, removido na preparação da v0.1, também apontava nessa direção.
 
 ---
 
@@ -310,6 +310,8 @@ datatool join clientes.csv pedidos.csv --on cpf --output base.parquet
 ---
 
 ## Reconciliar comandos-esqueleto
+
+*(Resolvido na preparação da v0.1: os comandos-esqueleto foram removidos do código. A tabela abaixo fica como registro de onde cada ideia vive no roadmap.)*
 
 O [src/datatool/main.py](../src/datatool/main.py) tem comandos que só imprimem os argumentos recebidos e **não correspondem a nenhuma spec**:
 

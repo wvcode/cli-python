@@ -1,13 +1,18 @@
-# datatool Python CLI
+# datatool
 
-Command line tool para manipulação de datasets de maneira facilitada: converter entre formatos, diagnosticar problemas de qualidade, gerar profiling estatístico e limpar dados — tudo pela linha de comando.
+Diagnostica, perfila, limpa e converte arquivos de dados pela linha de comando: CSV, Excel, JSON, Parquet e outros. Aponta valores nulos, duplicidades, datas em formatos diferentes, números guardados como texto e CPF/CNPJ inválido, e sugere o comando que corrige cada problema. Entende nativamente CSV exportado pelo Excel em português (`;`, `cp1252`), CPF/CNPJ e valores em R$.
 
-O roadmap completo, com o status de cada funcionalidade, está em [specs/README.md](specs/README.md).
+```bash
+pip install datatool-cli
+datatool info clientes.csv
+```
+
+O roadmap completo, com o status de cada funcionalidade, está em [specs/README.md](https://github.com/wvcode/cli-python/blob/main/specs/README.md).
 
 ## Status
 
 - **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`/`convert`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução (no diretório de logs do usuário, configurável), validação de CPF/CNPJ, servidor MCP (`datatool-mcp`) para agentes de IA
-- **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
+- **Ainda não implementado**: relatório HTML de profiling, pipelines YAML, inspeção e limpeza de planilhas Excel, IA opcional, licenciamento Pro — veja [specs/README.md](https://github.com/wvcode/cli-python/blob/main/specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
 
@@ -16,36 +21,18 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 ## Instalação
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-```
-
-Isso registra o comando `datatool` no ambiente virtual (instalação editável: alterações em `src/datatool/` refletem sem reinstalar). A partir da primeira release publicada, também dá para instalar direto do PyPI (o pacote se chama `datatool-cli`, mas o comando continua `datatool`):
-
-```bash
 pip install datatool-cli
 ```
 
-`datatool --version` mostra a versão instalada (gerada a partir da tag do git).
+O pacote se chama `datatool-cli`, mas o comando é `datatool`. `datatool --version` mostra a versão instalada, e `datatool --help` lista os comandos.
 
-Para apenas rodar via módulo, sem instalar:
-
-```bash
-PYTHONPATH=src python -m datatool.main <comando> ...
-```
-
-Para desenvolvimento (testes, cobertura, lint e checagem de tipos; já inclui o servidor MCP):
+Para o servidor MCP, usado por agentes de IA (ver a [seção própria](#servidor-mcp-datatool-mcp)), que traz dependências a mais:
 
 ```bash
-pip install -e ".[dev]"
+pip install "datatool-cli[mcp]"
 ```
 
-Para o servidor MCP (usado por agentes de IA — ver [seção própria](#servidor-mcp-datatool-mcp)):
-
-```bash
-pip install -e ".[mcp]"
-```
+Para instalar a partir do código-fonte, veja [Desenvolvimento](#desenvolvimento).
 
 ## Comandos disponíveis
 
@@ -60,6 +47,7 @@ datatool convert vendas.xlsx vendas.csv
 - SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas. Booleanos, datas e data-hora são gravados com o tipo declarado (`BOOLEAN`, `DATE`, `TIMESTAMP`) e voltam com o mesmo tipo na leitura. Data-hora com fuso volta em UTC, no mesmo instante.
 - Os tipos das colunas são inferidos com o arquivo inteiro, não só com as primeiras linhas: um valor como `N/D` numa coluna numérica, em qualquer posição, faz a coluna ser lida como texto (o `info` aponta e o `clean --fix-types` corrige), em vez de impedir a leitura ou virar nulo.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
+- Com `to_filename`, uma linha de confirmação vai para o stderr: `Gravado vendas.parquet (parquet): 1.500 linhas, 8 colunas`.
 - Se `to_filename` for omitido, o dataset inteiro é impresso no stdout em CSV, pronto para pipe (`datatool convert vendas.xlsx | head`).
 - Se o destino já existir, o comando recusa (exit code 2) e não altera nada; use `--overwrite` para substituí-lo.
 - `--show-stats` imprime (linhas, colunas) da origem e do destino; sem `to_filename`, vai para o stderr, para não se misturar ao CSV.
@@ -105,7 +93,7 @@ Sugestões:
   4. Tratar valores nulos → datatool clean clientes.csv --drop-null
 ```
 
-Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes.csv](examples/clientes.csv).
+Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes.csv](https://github.com/wvcode/cli-python/blob/main/examples/clientes.csv).
 
 ### `profile` — profiling estatístico de um dataset
 
@@ -191,9 +179,9 @@ cidade
   "porto alegre"
 ```
 
-Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](examples/clientes_sujos.csv).
+Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](https://github.com/wvcode/cli-python/blob/main/examples/clientes_sujos.csv).
 
-Com pelo menos uma flag de operação, o comando passa a transformar os dados (só em colunas de texto — colunas numéricas, por exemplo, não são alteradas) e mostra o resultado: grava em `--output arquivo` (formato inferido pela extensão, igual ao `convert`) ou, se omitido, imprime o dataset inteiro em CSV no stdout, com o relatório das operações no stderr. Nada é gravado por padrão, e um `--output` que já existe só é substituído com `--overwrite`.
+Com pelo menos uma flag de operação, o comando passa a transformar os dados (só em colunas de texto — colunas numéricas, por exemplo, não são alteradas) e mostra o resultado: grava em `--output arquivo` (formato inferido pela extensão, igual ao `convert`) ou, se omitido, imprime o dataset inteiro em CSV no stdout, com o relatório das operações no stderr. Nada é gravado por padrão, e um `--output` que já existe só é substituído com `--overwrite`. Ao gravar, uma linha de confirmação vai para o stderr, depois do relatório: `Gravado clientes_limpo.csv (csv): 20 linhas, 5 colunas`.
 
 Opções que só configuram uma operação exigem essa operação: `--key` precisa de `--remove-duplicates`, `--drop-null-columns` de `--drop-null`, `--document-columns` de `--normalize-documents`, `--date-columns` de `--normalize-dates` e `--decimal-separator` de `--fix-types`. Sem ela, o comando falha (exit code 2) em vez de ignorar a opção. Pelo mesmo motivo, `--output`/`--overwrite` sem nenhuma operação é erro: sem operação, o `clean` só faz o diagnóstico e não grava nada.
 
@@ -374,7 +362,7 @@ datatool clean clientes.csv --fix-types --remove-duplicates --output limpo.parqu
 - Números sem formatação pt-BR nem arredondamento; `NaN` vira `null`
 - Erros também saem em JSON (`"status": "error"`), com o mesmo exit code do modo texto
 - No `clean` com operações, `--output` é obrigatório, e no `convert`, o `to_filename`: o JSON é só o relatório, os dados vão para o arquivo
-- O formato completo, campo a campo, está em [specs/019-saida-json.md](specs/019-saida-json.md)
+- O formato completo, campo a campo, está em [specs/019-saida-json.md](https://github.com/wvcode/cli-python/blob/main/specs/019-saida-json.md)
 
 ### Ocultar valores de célula (`--redact-values`)
 
@@ -392,7 +380,7 @@ datatool clean clientes.csv --redact-values
 
 ### Servidor MCP (`datatool-mcp`)
 
-Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como ferramentas [MCP](https://modelcontextprotocol.io/) para um agente de IA (Claude Code, Claude Desktop, Cursor, ...) chamar diretamente, em vez de escrever código de análise do zero a cada conversa. Requer `pip install -e ".[mcp]"` (ver [Instalação](#instalação)) — quem só usa o CLI não precisa dessa dependência.
+Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como ferramentas [MCP](https://modelcontextprotocol.io/) para um agente de IA (Claude Code, Claude Desktop, Cursor, ...) chamar diretamente, em vez de escrever código de análise do zero a cada conversa. Requer `pip install "datatool-cli[mcp]"` (ver [Instalação](#instalação)) — quem só usa o CLI não precisa dessa dependência.
 
 ```json
 {
@@ -409,16 +397,21 @@ Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como f
 - Todo caminho de arquivo fica restrito ao diretório passado em `--root`; `output`/`to_filename` nunca pode ser o mesmo arquivo da entrada, e uma saída já existente exige `overwrite: true`
 - `redact_values` vem **ligado por padrão** nas ferramentas (diferente do CLI, onde vem desligado): os valores de célula não trafegam para o modelo de IA a menos que a pessoa configure a ferramenta com `redact_values: false`
 - Cada chamada é registrada em `<root>/logs/datatool.log` (ou onde `DATATOOL_LOG_DIR` apontar), com o nome prefixado (`mcp info`, `mcp clean`, ...)
-- Só ferramentas Community por enquanto — o detalhamento completo está em [specs/020-mcp-server.md](specs/020-mcp-server.md)
-
-### Em desenvolvimento
-
-Os comandos abaixo ainda não estão implementados: ficam ocultos no `--help` e, se chamados, saem com exit code 1 e a mensagem `ainda não foi implementado` — acompanhe o status em [specs/README.md](specs/README.md):
-
-- `datatool dataset translate|explain|transform|decode`
-- `datatool excel` — inspeção/limpeza de planilhas Excel
+- Só ferramentas Community por enquanto — o detalhamento completo está em [specs/020-mcp-server.md](https://github.com/wvcode/cli-python/blob/main/specs/020-mcp-server.md)
 
 ## Desenvolvimento
+
+Instalar a partir do código-fonte, em modo editável (alterações em `src/datatool/` valem sem reinstalar), com as ferramentas de teste, lint e checagem de tipos, que já incluem o servidor MCP:
+
+```bash
+git clone https://github.com/wvcode/cli-python.git
+cd cli-python
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Para apenas rodar via módulo, sem instalar: `PYTHONPATH=src python -m datatool.main <comando> ...`
 
 Rodar os testes (com cobertura; o CI exige pelo menos 95%):
 

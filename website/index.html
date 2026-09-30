@@ -522,12 +522,12 @@
       <a class="btn btn-ghost" href="#instalacao">Instalação</a>
     </div>
     <div class="install-chip">
-      <code id="hero-install">pip install -e .</code>
+      <code id="hero-install">pip install datatool-cli</code>
       <button class="copy-btn" data-copy-target="hero-install">copiar</button>
     </div>
     <div class="stat-row">
       <div><span class="num">10/10</span><span class="label">user stories do MVP</span></div>
-      <div><span class="num">311</span><span class="label">testes automatizados</span></div>
+      <div><span class="num">317</span><span class="label">testes automatizados</span></div>
       <div><span class="num">21</span><span class="label">specs públicas</span></div>
     </div>
   </div>
@@ -733,7 +733,7 @@ cidade
       </div>
       <p style="color: var(--text-muted); margin-top: 16px;">Todo caminho de arquivo fica restrito ao diretório passado em <code>--root</code>. <code>redact_values</code> vem ligado por padrão nas ferramentas — diferente do CLI — para valores de célula não trafegarem para o modelo sem pedido explícito.</p>
       <div class="install-chip" style="margin-top:18px;">
-        <code id="mcp-install">pip install -e ".[mcp]"</code>
+        <code id="mcp-install">pip install "datatool-cli[mcp]"</code>
         <button class="copy-btn" data-copy-target="mcp-install">copiar</button>
       </div>
     </div>
@@ -754,14 +754,12 @@ cidade
 <section class="wrap" id="instalacao">
   <div class="section-head">
     <h2>Instalação</h2>
-    <p>Ainda não publicado no PyPI — instale a partir do código-fonte. A partir da primeira release, bastará <code>pip install datatool-cli</code> (o comando continua <code>datatool</code>).</p>
+    <p>Publicado no PyPI como <code>datatool-cli</code>; o comando é <code>datatool</code>. Requer Python 3.10 ou mais novo.</p>
   </div>
   <div class="terminal" style="max-width: 620px;">
     <div class="bar"><span></span><span></span><span></span></div>
-    <pre id="install-steps"><span class="prompt">$</span> git clone https://github.com/wvcode/cli-python.git
-<span class="prompt">$</span> cd cli-python
-<span class="prompt">$</span> python -m venv .venv &amp;&amp; source .venv/bin/activate
-<span class="prompt">$</span> pip install -e .</pre>
+    <pre id="install-steps"><span class="prompt">$</span> pip install datatool-cli
+<span class="prompt">$</span> datatool info clientes.csv</pre>
   </div>
   <div class="cta-row" style="margin-top:20px;">
     <button class="btn btn-ghost" data-copy-target="install-steps">Copiar comandos</button>

@@ -3,7 +3,7 @@ from collections import namedtuple
 
 from .files import read_file
 from .loading import check_output, csv_text, load_input, output_file_type, write_output
-from .reporting import CommandError, build_document, file_summary
+from .reporting import CommandError, build_document, file_summary, print_saved
 
 ConvertResult = namedtuple(
     "ConvertResult", ["input", "to_filename", "to_type", "target_shape"]
@@ -79,3 +79,4 @@ def print_text(result, show_stats=False):
     if show_stats:
         print("Destino gravado")
         print(f"  - (linhas, colunas) = {result.target_shape}")
+    print_saved(result.to_filename, result.to_type, df)

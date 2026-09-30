@@ -26,7 +26,7 @@ from .loading import (
     write_output,
 )
 from .quality import analyze_clean, display_message, finding_to_dict
-from .reporting import CommandError, build_document
+from .reporting import CommandError, build_document, print_saved
 
 _UNRECOGNIZED_LIMIT = 10
 
@@ -800,3 +800,5 @@ def print_result(result, redact_values=False):
             print(line, file=report_file)
     if to_stdout:
         print(data, end="")
+    else:
+        print_saved(result.output, result.output_type, result.df)

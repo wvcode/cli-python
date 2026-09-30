@@ -1,9 +1,11 @@
 import json
 import math
 import os
+import sys
 from enum import Enum
 
 from .execution_log import log
+from .formatting import format_int_ptbr
 
 SCHEMA_VERSION = 1
 
@@ -77,6 +79,19 @@ def fail(output_format, command, error):
         print_document(document)
     else:
         print(error.message)
+
+
+def print_saved(filename, file_type, df):
+    """Confirma no stderr, no modo texto, que um arquivo foi gravado. O stdout
+    fica para o relatório (ou para o CSV, quando não há arquivo de destino)."""
+    # Sem isso, com stdout e stderr no mesmo arquivo (`2>&1`), a confirmação
+    # sairia antes do relatório, que fica no buffer do stdout.
+    sys.stdout.flush()
+    print(
+        f"Gravado {filename} ({file_type.value}): "
+        f"{format_int_ptbr(df.height)} linhas, {format_int_ptbr(df.width)} colunas",
+        file=sys.stderr,
+    )
 
 
 def file_summary(filename, file_type, df):

@@ -56,7 +56,7 @@ A saída no terminal não muda: o que foi detectado automaticamente vai só para
 2026-09-25 14:03:12,498 INFO    [a1b2c3] info: fim — exit code 0, 0,15 s
 ```
 
-**O que é registrado** — tudo o que o CLI faz, em todos os comandos (inclusive os ainda esqueleto, como `excel` e `dataset`, que registram ao menos início e fim):
+**O que é registrado** — tudo o que o CLI faz, em todos os comandos (os comandos-esqueleto `excel` e `dataset`, que registravam ao menos início e fim, foram removidos na preparação da v0.1):
 
 | Evento | Nível | Conteúdo |
 |--------|-------|----------|

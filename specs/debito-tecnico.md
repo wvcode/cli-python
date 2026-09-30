@@ -98,6 +98,8 @@ A seção "Reconciliar comandos-esqueleto" do backlog trata do destino final. **
 
 **Resolução:** as duas coisas. Os comandos ficam ocultos no `--help` e saem com exit 1 e `Command '...' is not implemented yet.`. As assinaturas foram mantidas, e os testes agora verificam a falha.
 
+**Atualização (preparação da v0.1):** os comandos-esqueleto foram removidos do código, junto com os enums que só eles usavam e os testes de placeholder, para não ir ao PyPI código que não faz nada. Chamá-los agora dá o erro padrão do click (`No such command`, exit 2). O plano de cada um continua no backlog e nas specs 013 e 014.
+
 ---
 
 ## Média

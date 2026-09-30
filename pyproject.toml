@@ -6,15 +6,41 @@ build-backend = "setuptools.build_meta"
 name = "datatool-cli"
 # Vem da tag do git (setuptools-scm): a tag v0.2.0 publica a versão 0.2.0.
 dynamic = ["version"]
-description = "Command line tool para ajudar na manipulação de dados."
+description = "Diagnostica, perfila, limpa e converte arquivos de dados (CSV, Excel, JSON, Parquet) pela linha de comando, com suporte nativo a CSV do Excel brasileiro, CPF/CNPJ e R$."
 readme = "README.md"
 license = "GPL-3.0-only"
 license-files = ["LICENSE"]
 authors = [{ name = "WVCode", email = "contato@wvcode.com.br" }]
 requires-python = ">=3.10"
+keywords = [
+    "csv",
+    "excel",
+    "parquet",
+    "data-cleaning",
+    "data-quality",
+    "profiling",
+    "polars",
+    "cpf",
+    "cnpj",
+    "mcp",
+]
+# Sem classificador de licença: com `license` no formato SPDX (PEP 639), o
+# setuptools recusa os dois juntos.
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Natural Language :: Portuguese (Brazilian)",
     "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Utilities",
 ]
 # Mínimos verificados rodando a suíte com `uv pip install --resolution
 # lowest-direct` (ver o job `test-minimum` do CI).
@@ -49,6 +75,7 @@ dev = [
 [project.urls]
 Homepage = "https://github.com/wvcode/cli-python"
 "Bug Tracker" = "https://github.com/wvcode/cli-python/issues"
+Changelog = "https://github.com/wvcode/cli-python/blob/main/CHANGELOG.md"
 
 [project.scripts]
 datatool = "datatool.main:app"

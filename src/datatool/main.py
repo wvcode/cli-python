@@ -1,4 +1,3 @@
-from enum import Enum
 from typing import Annotated
 
 import typer
@@ -12,7 +11,10 @@ from .execution_log import logged
 from .files import FileType
 from .reporting import CommandError, OutputFormat, fail, print_document
 
-app = typer.Typer()
+app = typer.Typer(
+    help="Diagnostica, perfila, limpa e converte arquivos de dados: CSV, Excel, "
+    "JSON, Parquet e outros."
+)
 
 FormatOption = Annotated[
     OutputFormat,
@@ -47,9 +49,6 @@ RedactValuesOption = Annotated[
         "mantém as contagens.",
     ),
 ]
-
-dataset_app = typer.Typer()
-app.add_typer(dataset_app, name="dataset", hidden=True)
 
 
 def _emit(command, output_format, run, to_document, print_text):
@@ -95,43 +94,6 @@ def _main(
     pass
 
 
-# Opções dos comandos-esqueleto (`dataset`), ainda não implementados.
-class Language(str, Enum):
-    MANDARIN = "Mandarin"
-    SPANISH = "Spanish"
-    ENGLISH = "English"
-    HINDI = "Hindi"
-    GERMAN = "German"
-    ITALIAN = "Italian"
-    PORTUGUES = "Portugues"
-    FRENCH = "French"
-
-
-class EncodingType(str, Enum):
-    UTF8 = "utf-8"
-    ASCII = "ascii"
-    ISO_8859_1 = "iso-8859-1"
-    UTF16 = "utf-16"
-    UTF32 = "utf-32"
-    WINDOWS_1252 = "cp1252"
-    BIG5 = "big5"
-    GB2312 = "gb2312"
-    SHIFT_JIS = "shift_jis"
-    EUC_JP = "euc_jp"
-
-
-class OnErrorType(str, Enum):
-    IGNORE = "ignore"
-    REPLACE = "replace"
-
-
-def _not_implemented(command):
-    # Comandos-esqueleto: ocultos no --help e com exit != 0, para que scripts e
-    # agentes não confundam o placeholder com uma execução bem-sucedida.
-    print(f"O comando '{command}' ainda não foi implementado.")
-    raise typer.Exit(code=1)
-
-
 # ----------------------------------------------------------------
 # Convert commands
 # ----------------------------------------------------------------
@@ -148,6 +110,12 @@ def convert(
     sep: SepOption = None,
     encoding: EncodingOption = None,
 ):
+    """Converte um arquivo de um formato para outro.
+
+    Formatos: CSV, JSON, JSONL, Excel (xlsx), Parquet, Feather, Avro e SQLite.
+    O formato vem da extensão (ou de --from-type/--to-type). Sem TO_FILENAME,
+    imprime o resultado em CSV no stdout.
+    """
     # No JSON, o stdout é só o relatório: o dataset precisa ir para um arquivo,
     # e as estatísticas de --show-stats já estão em `source`/`target`.
     if output_format == OutputFormat.JSON:
@@ -194,6 +162,11 @@ def info(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
 ):
+    """Diagnostica o arquivo e sugere o comando que corrige cada problema.
+
+    Aponta valores nulos, linhas duplicadas, datas em formatos diferentes,
+    números guardados como texto e CPF/CNPJ inválido.
+    """
     _emit(
         "info",
         output_format,
@@ -233,6 +206,12 @@ def profile(
     ] = None,
     redact_values: RedactValuesOption = False,
 ):
+    """Estatísticas de cada coluna.
+
+    Numéricas: mínimo, máximo, média, mediana, percentis e outliers.
+    Categóricas: cardinalidade e valores mais frequentes. Também conta linhas
+    duplicadas, no total e por chave (--key).
+    """
     _emit(
         "profile",
         output_format,
@@ -324,6 +303,13 @@ def clean(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
 ):
+    """Diagnostica e corrige problemas de qualidade.
+
+    Sem nenhuma operação, só diagnostica, sem alterar nada: e-mail inválido,
+    telefones em formatos diferentes, espaços extras, duplicidade,
+    capitalização e CPF/CNPJ. Com operações (ex.: --trim, --fix-types,
+    --normalize-dates), corrige e grava em --output, ou imprime o CSV no stdout.
+    """
     options = clean_command.CleanOptions(
         trim=trim,
         lowercase=lowercase,
@@ -393,75 +379,6 @@ def clean(
         to_document=lambda result: clean_command.result_document(result, redact_values),
         print_text=lambda result: clean_command.print_result(result, redact_values),
     )
-
-
-# ----------------------------------------------------------------
-# Excel commands
-# ----------------------------------------------------------------
-@app.command("excel", hidden=True)
-@logged("excel")
-def excel(
-    filename: str,
-    workbooks: list[str] | None = None,
-    split: Annotated[bool, typer.Option("--split")] = False,
-    output: str | None = None,
-):
-    _not_implemented("excel")
-
-
-# ----------------------------------------------------------------
-# Dataset commands
-# ----------------------------------------------------------------
-@dataset_app.command("translate")
-@logged("dataset translate")
-def dataset_translate(
-    filename: str,
-    to: Annotated[Language, typer.Option()] = Language.PORTUGUES,
-    only_header: Annotated[bool, typer.Option("--only-header")] = False,
-    output: str | None = None,
-):
-    _not_implemented("dataset translate")
-
-
-@dataset_app.command("explain")
-@logged("dataset explain")
-def dataset_explain(
-    filename: str,
-    only_columns: Annotated[bool, typer.Option("--only-columns")] = False,
-    output: str | None = None,
-):
-    _not_implemented("dataset explain")
-
-
-@dataset_app.command("transform")
-@logged("dataset transform")
-def dataset_transform(
-    filename: str,
-    columns: list[str] | None = None,
-    fillna: str | None = None,
-    capitalize: Annotated[bool, typer.Option("--capitalize")] = False,
-    uppercase: Annotated[bool, typer.Option("--uppercase")] = False,
-    lowercase: Annotated[bool, typer.Option("--lowercase")] = False,
-    replace: Annotated[tuple[str, str] | None, typer.Option()] = None,
-    decode: str | None = None,
-    decurse: str | None = None,
-    output: str | None = None,
-):
-    _not_implemented("dataset transform")
-
-
-@dataset_app.command("decode")
-@logged("dataset decode")
-def dataset_decode(
-    filename: str,
-    to: Annotated[EncodingType, typer.Option(case_sensitive=False)] = EncodingType.UTF8,
-    onerror: Annotated[
-        OnErrorType, typer.Option(case_sensitive=False)
-    ] = OnErrorType.IGNORE,
-    onerror_value: str | None = None,
-    output: str | None = None,
-):
-    _not_implemented("dataset decode")
 
 
 # ----------------------------------------------------------------
