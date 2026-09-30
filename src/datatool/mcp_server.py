@@ -34,8 +34,8 @@ from .structures import FileType
 DEFAULT_MAX_COLUMNS = 50
 
 MISSING_MCP_MESSAGE = (
-    "datatool-mcp requires the optional 'mcp' dependency. "
-    "Install it with: pip install 'datatool-cli[mcp]'"
+    "O datatool-mcp precisa da dependência opcional 'mcp'. "
+    "Instale com: pip install 'datatool-cli[mcp]'"
 )
 
 
@@ -50,7 +50,7 @@ def _resolve(root, raw_path):
         candidate = root / candidate
     resolved = candidate.resolve()
     if resolved != root and root not in resolved.parents:
-        raise SandboxError(f"Path escapes the server root: {raw_path}")
+        raise SandboxError(f"O caminho está fora da raiz do servidor: {raw_path}")
     return resolved
 
 
@@ -62,10 +62,12 @@ def _validate_output(root, output, input_resolved, overwrite):
     resolved = _resolve(root, output)
     resolved_str = str(resolved)
     if resolved_str == input_resolved:
-        raise SandboxError(f"Output cannot be the same file as the input: {output}")
+        raise SandboxError(
+            f"O destino não pode ser o próprio arquivo de entrada: {output}"
+        )
     if resolved.exists() and not overwrite:
         raise SandboxError(
-            f"Output path already exists: {output}. Pass overwrite=true to replace it."
+            f"O destino {output} já existe. Passe overwrite=true para substituí-lo."
         )
     return resolved_str
 
@@ -77,7 +79,7 @@ def _parse_file_type(value, option_name):
         return FileType(value)
     except ValueError:
         allowed = ", ".join(member.value for member in FileType)
-        raise SandboxError(f"Invalid {option_name}: {value}. Use one of: {allowed}")
+        raise SandboxError(f"{option_name} inválido: {value}. Use um de: {allowed}")
 
 
 def _summarize(document):
@@ -301,8 +303,8 @@ def build_server(root):
         if not options.has_operations():
             return _sandbox_error_result(
                 "clean",
-                "No operation requested. Use datatool_clean_diagnose for a "
-                "read-only diagnostic, or set at least one operation flag.",
+                "Nenhuma operação pedida. Use datatool_clean_diagnose para um "
+                "diagnóstico somente leitura, ou ligue pelo menos uma operação.",
             )
 
         try:

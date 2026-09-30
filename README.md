@@ -407,7 +407,7 @@ Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como f
 
 ### Em desenvolvimento
 
-Os comandos abaixo ainda não estão implementados: ficam ocultos no `--help` e, se chamados, saem com exit code 1 e a mensagem `is not implemented yet` — acompanhe o status em [specs/README.md](specs/README.md):
+Os comandos abaixo ainda não estão implementados: ficam ocultos no `--help` e, se chamados, saem com exit code 1 e a mensagem `ainda não foi implementado` — acompanhe o status em [specs/README.md](specs/README.md):
 
 - `datatool dataset translate|explain|transform|decode`
 - `datatool excel` — inspeção/limpeza de planilhas Excel

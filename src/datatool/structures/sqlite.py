@@ -40,8 +40,8 @@ def read_sqlite(filename):
             selected_table = tables[0]
         else:
             raise ValueError(
-                f"Could not determine which table to read from {filename}: "
-                f"found tables {tables}."
+                f"Não foi possível decidir qual tabela ler de {filename}: "
+                f"tabelas encontradas: {tables}."
             )
 
         cursor.execute(f"SELECT * FROM {_quote(selected_table)}")

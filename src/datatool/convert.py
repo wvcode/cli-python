@@ -43,8 +43,8 @@ def convert(
             target_shape = read_file(to_type, to_filename).shape
         except Exception as error:
             raise CommandError(
-                f"Saved {to_filename}, but could not reload it for --show-stats: "
-                f"{error}",
+                f"{to_filename} foi gravado, mas não foi possível relê-lo para o "
+                f"--show-stats: {error}",
                 1,
             ) from error
     return ConvertResult(loaded, to_filename, to_type, target_shape)
@@ -68,13 +68,13 @@ def print_text(result, show_stats=False):
     data = csv_text(df) if to_stdout else None
 
     if show_stats:
-        print("Source loaded", file=stats_file)
-        print(f"  - (rows, columns) = {df.shape}", file=stats_file)
+        print("Origem carregada", file=stats_file)
+        print(f"  - (linhas, colunas) = {df.shape}", file=stats_file)
 
     if to_stdout:
         print(data, end="")
         return
 
     if show_stats:
-        print("Target saved")
-        print(f"  - (rows, columns) = {result.target_shape}")
+        print("Destino gravado")
+        print(f"  - (linhas, colunas) = {result.target_shape}")

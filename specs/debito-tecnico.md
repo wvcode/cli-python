@@ -23,7 +23,7 @@ Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = res
 | DT11 ✅ | Adicionar uma operação de `clean` exige editar 6 lugares | clean/MCP | Média | M |
 | DT12 ✅ | `clean` depende de funções privadas de `quality` | Arquitetura | Média | P |
 | DT13 ✅ | 23 argumentos posicionais de `main.clean` → `file_clean` | CLI | Média | P |
-| DT14 ◐ | Mensagens de erro erradas ou inconsistentes | UX | Média | P |
+| DT14 ✅ | Mensagens de erro erradas ou inconsistentes | UX | Média | P |
 | DT15 ✅ | Flags conflitantes aceitas sem erro | clean | Média | P |
 | DT16 | Log gravado em `./logs` do diretório corrente | Log | Média | P |
 | DT17 ✅ | `datatool-mcp` quebra com traceback sem o extra `[mcp]` | Packaging | Média | P |
@@ -170,6 +170,12 @@ Nova operação = `_apply_*` + a tupla `has_operations` ([clean.py:726](../src/d
 - Idiomas misturados: erros em inglês, relatórios e sugestões em pt-BR.
 
 **Resolução (parcial):** `clean` não sugere mais `--from-type`; `info`, `profile` e `clean` (entrada e saída) listam as extensões a partir de `SUPPORTED_EXTENSIONS`; as mensagens de load/save usam `.value`. **Pendente:** unificar o idioma (decidido adiar: muda o texto que agentes leem no JSON) e centralizar as mensagens, que depende do DT10.
+
+**Resolução do restante:** toda saída voltada ao usuário está em pt-BR: erros no texto e no JSON (`error.message`), erros do sandbox do MCP, a mensagem de dependência ausente do `datatool-mcp`, comandos não implementados e as linhas do `--show-stats`. Nomes de opções continuam como na linha de comando (`--key`, `--overwrite`, `overwrite=true`). Ficam em inglês:
+- textos que vêm das bibliotecas e entram como `{error}` nas mensagens (ex.: erros de leitura do polars);
+- os erros de uso do Typer/Click ("Missing argument", "No such option"), que exigiriam traduzir o próprio framework.
+
+Sobre centralizar: as mensagens repetidas já foram centralizadas no `loading.py` pelo DT10 (entrada, destino, extensões, colunas). As que sobraram aparecem uma única vez, junto da regra que validam, e movê-las para um catálogo só acrescentaria indireção. Se um dia houver tradução para outros idiomas, esse é o momento de criar o catálogo.
 
 ### DT15 — Flags conflitantes aceitas sem erro **(reproduzido)**
 `clean --lowercase --uppercase` aplica as duas, e a última vence em silêncio. O mesmo vale para `--normalize-case` junto com qualquer uma delas. Além disso, `--columns` significa "alvo do `--drop-null`" no `clean` e "seleção de colunas" no `profile`.

@@ -87,7 +87,7 @@ def run(filename, key=None, sep=None, encoding=None, columns=None, max_columns=N
 
     if max_columns is not None and max_columns < 1:
         raise CommandError(
-            f"Invalid --max-columns: {max_columns}. Use a positive integer.", 2
+            f"--max-columns inválido: {max_columns}. Use um inteiro positivo.", 2
         )
 
     # Sempre na ordem do dataset, mesmo que --columns tenha sido informado numa

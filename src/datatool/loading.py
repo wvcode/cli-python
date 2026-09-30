@@ -31,20 +31,20 @@ def _resolve_file_type(filename, file_type, type_option):
     file_type = infer_file_type(filename)
     if file_type is None:
         message = (
-            f"Could not infer the format of {filename} from its extension. "
-            f"Supported extensions: {SUPPORTED_EXTENSIONS}."
+            f"Não foi possível inferir o formato de {filename} pela extensão. "
+            f"Extensões suportadas: {SUPPORTED_EXTENSIONS}."
         )
         if type_option:
-            message += f" Use {type_option} to specify it explicitly."
+            message += f" Use {type_option} para informar o formato."
         raise CommandError(message, 2)
     return file_type
 
 
 def load_input(filename, sep=None, encoding=None, file_type=None, type_option=None):
     if not os.path.exists(filename):
-        raise CommandError(f"The file provided {filename} does not exist.", 2)
+        raise CommandError(f"O arquivo {filename} não existe.", 2)
     if not os.path.isfile(filename):
-        raise CommandError(f"The file provided {filename} is not a valid file.", 2)
+        raise CommandError(f"{filename} não é um arquivo.", 2)
 
     file_type = _resolve_file_type(filename, file_type, type_option)
 
@@ -56,7 +56,7 @@ def load_input(filename, sep=None, encoding=None, file_type=None, type_option=No
         df = read_file(file_type, filename, sep, encoding)
     except Exception as error:
         raise CommandError(
-            f"Could not load file {filename} as {file_type.value}: {error}", 1
+            f"Não foi possível ler {filename} como {file_type.value}: {error}", 1
         ) from error
     return LoadedInput(filename, file_type, df, file_summary(filename, file_type, df))
 
@@ -69,12 +69,12 @@ def check_output(filename, overwrite=False):
     """Valida o destino antes de processar, para falhar antes do trabalho."""
     if os.path.exists(filename) and not overwrite:
         raise CommandError(
-            f"Output path already exists: {filename}. Use --overwrite to replace it.",
+            f"O destino {filename} já existe. Use --overwrite para substituí-lo.",
             2,
         )
     output_dir = os.path.dirname(filename) or "."
     if not os.access(output_dir, os.W_OK):
-        raise CommandError(f"The output path {filename} cannot be written.", 3)
+        raise CommandError(f"Não é possível gravar em {filename}.", 3)
 
 
 def write_output(df, filename, file_type):
@@ -82,7 +82,7 @@ def write_output(df, filename, file_type):
         save_file(df, file_type, filename)
     except Exception as error:
         raise CommandError(
-            f"Could not save file {filename} as {file_type.value}: {error}", 1
+            f"Não foi possível gravar {filename} como {file_type.value}: {error}", 1
         ) from error
 
 
@@ -92,8 +92,8 @@ def csv_text(df):
         return df.write_csv()
     except Exception as error:
         raise CommandError(
-            f"Could not write the result as CSV to stdout: {error}. "
-            "Pass an output file instead.",
+            f"Não foi possível escrever o resultado em CSV no stdout: {error}. "
+            "Informe um arquivo de destino.",
             1,
         ) from error
 
@@ -108,6 +108,7 @@ def resolve_columns(df, spec, option_name):
     unknown_columns = [column for column in columns if column not in df.columns]
     if unknown_columns:
         raise CommandError(
-            f"Unknown column(s) in {option_name}: {', '.join(unknown_columns)}", 2
+            f"Coluna(s) inexistente(s) em {option_name}: {', '.join(unknown_columns)}",
+            2,
         )
     return columns

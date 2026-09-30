@@ -66,7 +66,7 @@ class TestConvertCommand:
         with isolated_filesystem():
             result = runner.invoke(app, ["convert", "missing.csv", "output.json"])
             assert result.exit_code != 0
-            assert "does not exist" in result.stdout
+            assert "não existe" in result.stdout
 
     def test_convert_unsupported_extension(self, runner):
         with isolated_filesystem():
@@ -75,7 +75,7 @@ class TestConvertCommand:
 
             result = runner.invoke(app, ["convert", "filename.txt", "output.txt"])
             assert result.exit_code != 0
-            assert "Could not infer" in result.stdout
+            assert "Não foi possível inferir" in result.stdout
 
     def test_convert_unwritable_directory(self, runner):
         with isolated_filesystem():
@@ -86,7 +86,7 @@ class TestConvertCommand:
                 app, ["convert", "filename.csv", "no_such_dir/output.csv"]
             )
             assert result.exit_code != 0
-            assert "cannot be written" in result.stdout
+            assert "Não é possível gravar em" in result.stdout
 
     @pytest.mark.parametrize(
         "to_extension", ["json", "jsonl", "xlsx", "parquet", "sqlite"]
@@ -151,7 +151,7 @@ class TestConvertCommand:
                 app, ["convert", "lista.json", "dados.db", "--overwrite"]
             )
             assert result.exit_code == 1
-            assert "Could not save file dados.db as sqlite:" in result.stdout
+            assert "Não foi possível gravar dados.db como sqlite:" in result.stdout
 
             runner.invoke(app, ["convert", "dados.db", "volta.csv"])
             with open("volta.csv", encoding="utf8") as f:
@@ -179,7 +179,7 @@ class TestOutputHandling:
             result = runner.invoke(app, ["convert", "dados.csv", "--show-stats"])
             assert result.exit_code == 0
             assert result.stdout == "id,nome\n" + self.ROWS
-            assert "Source loaded" in result.stderr
+            assert "Origem carregada" in result.stderr
             assert "(30, 2)" in result.stderr
 
     def test_clean_without_output_prints_csv_and_reports_to_stderr(self, runner):
@@ -197,7 +197,10 @@ class TestOutputHandling:
                 f.write('[{"a": [1, 2]}]')
             result = runner.invoke(app, ["convert", "lista.json"])
             assert result.exit_code == 1
-            assert "Could not write the result as CSV to stdout" in result.stdout
+            assert (
+                "Não foi possível escrever o resultado em CSV no stdout"
+                in result.stdout
+            )
 
     @pytest.mark.parametrize(
         "args",
@@ -214,7 +217,7 @@ class TestOutputHandling:
 
             result = runner.invoke(app, args)
             assert result.exit_code == 2
-            assert "Output path already exists: saida.csv" in result.stdout
+            assert "O destino saida.csv já existe" in result.stdout
             assert "--overwrite" in result.stdout
             with open("saida.csv", encoding="utf8") as f:
                 assert f.read() == "original\n"
@@ -235,7 +238,9 @@ class TestOutputHandling:
                 app, ["convert", "dados.csv", "saida.json", "--show-stats"]
             )
             assert result.exit_code == 1
-            assert "Saved saida.json, but could not reload it" in result.stdout
+            assert (
+                "saida.json foi gravado, mas não foi possível relê-lo" in result.stdout
+            )
             assert "arquivo corrompido" in result.stdout
 
     def test_convert_format_json(self, runner):
@@ -256,12 +261,12 @@ class TestOutputHandling:
     @pytest.mark.parametrize(
         "args, message",
         [
-            (["convert", "dados.csv"], "--format json requires TO_FILENAME"),
+            (["convert", "dados.csv"], "--format json exige TO_FILENAME"),
             (
                 ["convert", "dados.csv", "saida.json", "--show-stats"],
-                "--show-stats is not available with --format json",
+                "--show-stats não pode ser usado com --format json",
             ),
-            (["convert", "nao_existe.csv", "saida.json"], "does not exist"),
+            (["convert", "nao_existe.csv", "saida.json"], "não existe"),
         ],
     )
     def test_convert_format_json_errors(self, runner, args, message):
@@ -280,7 +285,7 @@ class TestInfoCommand:
         with isolated_filesystem():
             result = runner.invoke(app, ["info", "missing.csv"])
             assert result.exit_code != 0
-            assert "does not exist" in result.stdout
+            assert "não existe" in result.stdout
 
     def test_info_unsupported_extension(self, runner):
         with isolated_filesystem():
@@ -289,7 +294,7 @@ class TestInfoCommand:
 
             result = runner.invoke(app, ["info", "dados.txt"])
             assert result.exit_code != 0
-            assert "Could not infer" in result.stdout
+            assert "Não foi possível inferir" in result.stdout
             assert "sqlite" in result.stdout
 
     def test_info_no_problems(self, runner):
@@ -373,7 +378,7 @@ class TestProfileCommand:
         with isolated_filesystem():
             result = runner.invoke(app, ["profile", "missing.csv"])
             assert result.exit_code != 0
-            assert "does not exist" in result.stdout
+            assert "não existe" in result.stdout
 
     def test_profile_unsupported_extension(self, runner):
         with isolated_filesystem():
@@ -382,7 +387,7 @@ class TestProfileCommand:
 
             result = runner.invoke(app, ["profile", "dados.txt"])
             assert result.exit_code != 0
-            assert "Could not infer" in result.stdout
+            assert "Não foi possível inferir" in result.stdout
 
     def test_profile_unknown_key_column(self, runner):
         with isolated_filesystem():
@@ -391,7 +396,7 @@ class TestProfileCommand:
 
             result = runner.invoke(app, ["profile", "dados.csv", "--key", "C"])
             assert result.exit_code != 0
-            assert "Unknown column" in result.stdout
+            assert "inexistente" in result.stdout
 
     def test_profile_numeric_column_stats(self, runner):
         with isolated_filesystem():
@@ -464,7 +469,7 @@ class TestCleanCommand:
         with isolated_filesystem():
             result = runner.invoke(app, ["clean", "missing.csv"])
             assert result.exit_code != 0
-            assert "does not exist" in result.stdout
+            assert "não existe" in result.stdout
 
     def test_clean_unsupported_extension(self, runner):
         with isolated_filesystem():
@@ -473,7 +478,7 @@ class TestCleanCommand:
 
             result = runner.invoke(app, ["clean", "dados.txt"])
             assert result.exit_code != 0
-            assert "Could not infer" in result.stdout
+            assert "Não foi possível inferir" in result.stdout
             # `clean` não tem --from-type; a mensagem lista as extensões aceitas.
             assert "--from-type" not in result.stdout
             assert "parquet" in result.stdout and "sqlite" in result.stdout
@@ -487,7 +492,7 @@ class TestCleanCommand:
                 app, ["clean", "dados.csv", "--trim", "--output", "saida.txt"]
             )
             assert result.exit_code == 2
-            assert "Supported extensions: csv, json" in result.stdout
+            assert "Extensões suportadas: csv, json" in result.stdout
 
     def test_clean_no_problems(self, runner):
         with isolated_filesystem():
@@ -623,7 +628,7 @@ class TestCleanStringOperators:
                 app, ["clean", "dados.csv", *flags, "--output", "saida.csv"]
             )
             assert result.exit_code == 2
-            assert "mutually exclusive" in result.stdout
+            assert "não podem ser usadas juntas" in result.stdout
             assert not os.path.exists("saida.csv")
 
     def test_clean_normalize_case_unifies_variants(self, runner):
@@ -691,7 +696,7 @@ class TestCleanStringOperators:
                 ["clean", "dados.csv", "--trim", "--output", "no_such_dir/saida.csv"],
             )
             assert result.exit_code != 0
-            assert "cannot be written" in result.stdout
+            assert "Não é possível gravar em" in result.stdout
 
 
 class TestCleanRemoveDuplicates:
@@ -747,7 +752,7 @@ class TestCleanRemoveDuplicates:
                 ["clean", "dados.csv", "--remove-duplicates", "--key", "naoexiste"],
             )
             assert result.exit_code != 0
-            assert "Unknown column" in result.stdout
+            assert "inexistente" in result.stdout
 
     def test_no_duplicates_reports_zero_removed(self, runner):
         with isolated_filesystem():
@@ -897,7 +902,7 @@ class TestCleanFillNull:
                 app, ["clean", "dados.csv", "--fill-null", "naoexiste:0"]
             )
             assert result.exit_code != 0
-            assert "Unknown column" in result.stdout
+            assert "inexistente" in result.stdout
 
     @pytest.mark.parametrize("value", ["abc", "1.5"])
     def test_fill_null_rejects_value_incompatible_with_column_type(self, runner, value):
@@ -917,7 +922,7 @@ class TestCleanFillNull:
                 ],
             )
             assert result.exit_code == 2
-            assert f"Invalid value in --fill-null idade:{value}" in result.stdout
+            assert f"Valor inválido em --fill-null idade:{value}" in result.stdout
             assert not os.path.exists("saida.csv")
 
 
@@ -966,7 +971,7 @@ class TestCleanDropNull:
                 app, ["clean", "dados.csv", "--drop-null", "--columns", "naoexiste"]
             )
             assert result.exit_code != 0
-            assert "Unknown column" in result.stdout
+            assert "inexistente" in result.stdout
 
     def test_drop_null_columns_option_name(self, runner):
         with isolated_filesystem():
@@ -1106,7 +1111,7 @@ class TestCleanNormalizeDates:
                 ["clean", "dados.csv", "--normalize-dates", "--date-columns", "x"],
             )
             assert result.exit_code != 0
-            assert "Unknown column" in result.stdout
+            assert "inexistente" in result.stdout
 
     def test_non_text_date_column(self, runner):
         with isolated_filesystem():
@@ -1118,7 +1123,7 @@ class TestCleanNormalizeDates:
                 ["clean", "dados.csv", "--normalize-dates", "--date-columns", "idade"],
             )
             assert result.exit_code != 0
-            assert "not text" in result.stdout
+            assert "não são de texto" in result.stdout
 
 
 class TestCleanFixTypes:
@@ -1205,7 +1210,7 @@ class TestCleanFixTypes:
                 ["clean", "dados.csv", "--fix-types", "--decimal-separator", ";"],
             )
             assert result.exit_code != 0
-            assert "Invalid --decimal-separator" in result.stdout
+            assert "--decimal-separator inválido" in result.stdout
 
     def test_reports_failed_values_and_keeps_processing(self, runner):
         with isolated_filesystem():
@@ -1325,10 +1330,10 @@ class TestCleanColumns:
     @pytest.mark.parametrize(
         "args, message",
         [
-            (["--rename-columns", "naoexiste:x"], "Unknown column"),
-            (["--remove-columns", "nome,naoexiste"], "Unknown column"),
-            (["--rename-columns", "nome"], "Invalid entry in --rename-columns"),
-            (["--rename-columns", "nome:email"], "duplicate column"),
+            (["--rename-columns", "naoexiste:x"], "inexistente"),
+            (["--remove-columns", "nome,naoexiste"], "inexistente"),
+            (["--rename-columns", "nome"], "Entrada inválida em --rename-columns"),
+            (["--rename-columns", "nome:email"], "coluna(s) duplicada(s)"),
         ],
     )
     def test_errors_do_not_write_output(self, runner, args, message):
@@ -1631,7 +1636,7 @@ class TestCleanNormalizeDocuments:
                 ],
             )
             assert result.exit_code != 0
-            assert "Unknown column(s) in --document-columns" in result.stdout
+            assert "Coluna(s) inexistente(s) em --document-columns" in result.stdout
             assert not os.path.exists("saida.csv")
 
     def test_invalid_normalize_documents_value(self, runner):
@@ -1651,7 +1656,7 @@ class TestCleanNormalizeDocuments:
                 ],
             )
             assert result.exit_code != 0
-            assert "Invalid --normalize-documents" in result.stdout
+            assert "--normalize-documents inválido" in result.stdout
             assert not os.path.exists("saida.csv")
 
     def test_no_document_column_found(self, runner):
@@ -1806,7 +1811,7 @@ class TestProfileColumnsFilter:
                 app, ["profile", "dados.csv", "--columns", "naoexiste"]
             )
             assert result.exit_code != 0
-            assert "Unknown column(s) in --columns" in result.stdout
+            assert "Coluna(s) inexistente(s) em --columns" in result.stdout
 
     def test_max_columns_truncates_in_dataset_order(self, runner):
         with isolated_filesystem():
@@ -1854,7 +1859,7 @@ class TestProfileColumnsFilter:
 
             result = runner.invoke(app, ["profile", "dados.csv", "--max-columns", "0"])
             assert result.exit_code != 0
-            assert "Invalid --max-columns" in result.stdout
+            assert "--max-columns inválido" in result.stdout
 
     def test_columns_and_max_columns_combinable_with_key(self, runner):
         with isolated_filesystem():
@@ -2373,8 +2378,8 @@ class TestJsonOutput:
     @pytest.mark.parametrize(
         "args, exit_code, message",
         [
-            (["info", "naoexiste.csv"], 2, "does not exist"),
-            (["profile", "dados.csv", "--key", "x"], 2, "Unknown column"),
+            (["info", "naoexiste.csv"], 2, "não existe"),
+            (["profile", "dados.csv", "--key", "x"], 2, "inexistente"),
             (
                 [
                     "clean",
@@ -2386,7 +2391,7 @@ class TestJsonOutput:
                     "saida.csv",
                 ],
                 2,
-                "Unknown column",
+                "inexistente",
             ),
         ],
     )
@@ -2508,10 +2513,10 @@ class TestCsvDetection:
     @pytest.mark.parametrize(
         "filename, options, message",
         [
-            ("dados.csv", ["--sep", ";;"], "Invalid --sep"),
-            ("dados.csv", ["--encoding", "naoexiste"], "Unknown --encoding"),
-            ("dados.json", ["--sep", ";"], "only apply to CSV"),
-            ("dados.json", ["--encoding", "cp1252"], "only apply to CSV"),
+            ("dados.csv", ["--sep", ";;"], "--sep inválido"),
+            ("dados.csv", ["--encoding", "naoexiste"], "--encoding desconhecido"),
+            ("dados.json", ["--sep", ";"], "só se aplicam a arquivos CSV"),
+            ("dados.json", ["--encoding", "cp1252"], "só se aplicam a arquivos CSV"),
         ],
     )
     def test_invalid_options(self, runner, filename, options, message):
@@ -2532,7 +2537,7 @@ class TestCsvDetection:
 
             result = runner.invoke(app, ["info", "dados.csv", "--encoding", "utf-8"])
             assert result.exit_code == 1
-            assert "Could not load file" in result.stdout
+            assert "Não foi possível ler" in result.stdout
 
 
 class TestExecutionLog:
@@ -2616,7 +2621,7 @@ class TestExecutionLog:
             assert '--fix-types: "idade" 1 valores não convertidos' in log
             assert "gravado saida.parquet (parquet) — 10 linhas, 2 colunas" in log
             assert "ERROR   [" in log
-            assert "Unknown column(s) in --drop-null-columns: x" in log
+            assert "Coluna(s) inexistente(s) em --drop-null-columns: x" in log
             assert "fim — exit code 2" in log
 
     def test_no_cell_values_in_log(self, runner):
@@ -2723,7 +2728,7 @@ class TestNotImplementedCommands:
         with isolated_filesystem():
             result = runner.invoke(app, args)
             assert result.exit_code == 1
-            assert "is not implemented yet" in result.stdout
+            assert "ainda não foi implementado" in result.stdout
 
     def test_hidden_from_help(self, runner):
         result = runner.invoke(app, ["--help"])

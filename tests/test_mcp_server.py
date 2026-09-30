@@ -53,7 +53,7 @@ class TestDatatoolInfo:
             )
 
             assert result.is_error is True
-            assert "does not exist" in result.content[0].text
+            assert "não existe" in result.content[0].text
             assert result.structured_content["status"] == "error"
 
     def test_sandbox_violation(self):
@@ -65,7 +65,7 @@ class TestDatatoolInfo:
             )
 
             assert result.is_error is True
-            assert "escapes the server root" in result.content[0].text
+            assert "fora da raiz do servidor" in result.content[0].text
 
 
 class TestDatatoolProfile:
@@ -97,7 +97,7 @@ class TestDatatoolProfile:
                 mcp_server.build_server("."), "datatool_profile", filename="/etc/passwd"
             )
             assert result.is_error is True
-            assert "escapes the server root" in result.content[0].text
+            assert "fora da raiz do servidor" in result.content[0].text
 
     def test_max_columns_defaults_to_50(self):
         with isolated_filesystem():
@@ -147,7 +147,7 @@ class TestDatatoolCleanDiagnose:
                 filename="../fora.csv",
             )
             assert result.is_error is True
-            assert "escapes the server root" in result.content[0].text
+            assert "fora da raiz do servidor" in result.content[0].text
 
     def test_redact_values_defaults_to_true(self):
         with isolated_filesystem():
@@ -214,7 +214,7 @@ class TestDatatoolCleanApply:
                 trim=True,
             )
             assert result.is_error is True
-            assert "escapes the server root" in result.content[0].text
+            assert "fora da raiz do servidor" in result.content[0].text
 
     def test_rejects_same_file_as_output(self):
         with isolated_filesystem():
@@ -229,7 +229,7 @@ class TestDatatoolCleanApply:
                 trim=True,
             )
             assert result.is_error is True
-            assert "same file as the input" in result.content[0].text
+            assert "próprio arquivo de entrada" in result.content[0].text
 
     def test_rejects_existing_output_without_overwrite(self):
         with isolated_filesystem():
@@ -281,7 +281,7 @@ class TestDatatoolCleanApply:
                 output="saida.csv",
             )
             assert result.is_error is True
-            assert "No operation requested" in result.content[0].text
+            assert "Nenhuma operação pedida" in result.content[0].text
             assert not os.path.exists("saida.csv")
 
     def test_redact_values_hides_examples_by_default(self):
@@ -329,7 +329,7 @@ class TestDatatoolConvert:
             )
             assert result.is_error is True
             # Antes, o erro do convert voltava como "Unknown error", sem documento.
-            assert "does not exist" in result.content[0].text
+            assert "não existe" in result.content[0].text
             assert result.structured_content["command"] == "convert"
             assert result.structured_content["error"]["exit_code"] == 2
 
@@ -345,7 +345,7 @@ class TestDatatoolConvert:
                 to_filename="/tmp/fora.parquet",
             )
             assert result.is_error is True
-            assert "escapes the server root" in result.content[0].text
+            assert "fora da raiz do servidor" in result.content[0].text
 
     def test_rejects_existing_output_without_overwrite(self):
         with isolated_filesystem():
@@ -376,7 +376,7 @@ class TestDatatoolConvert:
                 from_type="xml",
             )
             assert result.is_error is True
-            assert "Invalid from_type" in result.content[0].text
+            assert "from_type inválido" in result.content[0].text
 
 
 class TestToolRegistration:

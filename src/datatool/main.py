@@ -89,7 +89,7 @@ def _fail(command, output_format, error):
 def _not_implemented(command):
     # Comandos-esqueleto: ocultos no --help e com exit != 0, para que scripts e
     # agentes não confundam o placeholder com uma execução bem-sucedida.
-    print(f"Command '{command}' is not implemented yet.")
+    print(f"O comando '{command}' ainda não foi implementado.")
     raise typer.Exit(code=1)
 
 
@@ -116,13 +116,13 @@ def convert(
             _fail(
                 "convert",
                 output_format,
-                CommandError("--format json requires TO_FILENAME", 2),
+                CommandError("--format json exige TO_FILENAME", 2),
             )
         if show_stats:
             _fail(
                 "convert",
                 output_format,
-                CommandError("--show-stats is not available with --format json", 2),
+                CommandError("--show-stats não pode ser usado com --format json", 2),
             )
 
     _emit(
@@ -321,9 +321,7 @@ def clean(
 
     # No JSON, o stdout é só o relatório: o DataFrame precisa ir para um arquivo.
     if output_format == OutputFormat.JSON and output is None:
-        _fail(
-            "clean", output_format, CommandError("--format json requires --output", 2)
-        )
+        _fail("clean", output_format, CommandError("--format json exige --output", 2))
 
     _emit(
         "clean",

@@ -43,14 +43,14 @@ datatool clean vendas.csv --fix-types --remove-duplicates --output limpo.parquet
 }
 ```
 
-- **Erros também em JSON**, no stdout, com o mesmo exit code do modo texto. A mensagem é a mesma do modo texto:
+- **Erros também em JSON**, no stdout, com o mesmo exit code do modo texto. A mensagem é a mesma do modo texto: *(Desde o débito técnico DT14, as mensagens de erro são em pt-BR, como o resto da saída. Nomes de opções continuam como na linha de comando, e textos vindos de bibliotecas, como o polars, aparecem como elas os produzem.)*
 
 ```json
 {
   "schema_version": 1,
   "command": "profile",
   "status": "error",
-  "error": {"exit_code": 2, "message": "Unknown column(s) in --key: naoexiste"}
+  "error": {"exit_code": 2, "message": "Coluna(s) inexistente(s) em --key: naoexiste"}
 }
 ```
 

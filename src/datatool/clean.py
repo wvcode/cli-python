@@ -101,7 +101,7 @@ def _apply_normalize_documents(df, options):
     mode = options.normalize_documents
     if mode not in _DOCUMENT_MODES:
         raise CommandError(
-            f"Invalid --normalize-documents: {mode}. Use 'digits' or 'masked'", 2
+            f"--normalize-documents inválido: {mode}. Use 'digits' ou 'masked'", 2
         )
 
     if options.document_columns:
@@ -158,7 +158,7 @@ def _apply_normalize_dates(df, options):
         non_text_columns = [column for column in columns if df[column].dtype != pl.Utf8]
         if non_text_columns:
             raise CommandError(
-                "Column(s) in --date-columns are not text: "
+                "Coluna(s) em --date-columns que não são de texto: "
                 f"{', '.join(non_text_columns)}",
                 2,
             )
@@ -199,7 +199,7 @@ def _apply_fix_types(df, options):
     decimal_separator = options.decimal_separator
     if decimal_separator is not None and decimal_separator not in DECIMAL_SEPARATORS:
         raise CommandError(
-            f"Invalid --decimal-separator: {decimal_separator}. Use ',' or '.'", 2
+            f"--decimal-separator inválido: {decimal_separator}. Use ',' ou '.'", 2
         )
 
     column_reports = []
@@ -260,7 +260,9 @@ def _apply_fill_null(df, options):
         column_name, separator, value = spec.partition(":")
         if separator:
             if column_name not in df.columns:
-                raise CommandError(f"Unknown column in --fill-null: {column_name}", 2)
+                raise CommandError(
+                    f"Coluna inexistente em --fill-null: {column_name}", 2
+                )
             null_count = df[column_name].null_count()
             if null_count:
                 dtype = df[column_name].dtype
@@ -270,8 +272,8 @@ def _apply_fill_null(df, options):
                 # texto: recusa em vez de trocar o tipo em silêncio.
                 if filled[column_name].dtype != dtype:
                     raise CommandError(
-                        f"Invalid value in --fill-null {spec}: "
-                        f"column {column_name} is {dtype}",
+                        f"Valor inválido em --fill-null {spec}: "
+                        f"a coluna {column_name} é do tipo {dtype}",
                         2,
                     )
                 df = filled
@@ -312,14 +314,14 @@ def _apply_rename_columns(df, options):
         old_name, new_name = old_name.strip(), new_name.strip()
         if not separator or not old_name or not new_name:
             raise CommandError(
-                f"Invalid entry in --rename-columns: {entry}. Use old:new", 2
+                f"Entrada inválida em --rename-columns: {entry}. Use antigo:novo", 2
             )
         mapping[old_name] = new_name
 
     unknown_columns = [column for column in mapping if column not in df.columns]
     if unknown_columns:
         raise CommandError(
-            f"Unknown column(s) in --rename-columns: {', '.join(unknown_columns)}",
+            f"Coluna(s) inexistente(s) em --rename-columns: {', '.join(unknown_columns)}",
             2,
         )
 
@@ -329,8 +331,7 @@ def _apply_rename_columns(df, options):
     )
     if duplicated:
         raise CommandError(
-            "--rename-columns would create duplicate column(s): "
-            f"{', '.join(duplicated)}",
+            f"--rename-columns criaria coluna(s) duplicada(s): {', '.join(duplicated)}",
             2,
         )
 
@@ -676,7 +677,7 @@ def apply_operations(
     """
     if sum((options.lowercase, options.uppercase, options.normalize_case)) > 1:
         raise CommandError(
-            "--lowercase, --uppercase and --normalize-case are mutually exclusive",
+            "--lowercase, --uppercase e --normalize-case não podem ser usadas juntas",
             2,
         )
 

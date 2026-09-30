@@ -23,14 +23,14 @@ def csv_options_error(file_type, sep, encoding):
     if sep is None and encoding is None:
         return None
     if file_type != FileType.CSV:
-        return "--sep/--encoding only apply to CSV input files."
+        return "--sep/--encoding só se aplicam a arquivos CSV de entrada."
     if sep is not None and len(_parse_sep(sep)) != 1:
-        return f"Invalid --sep: {sep}. Use a single character (or \\t for tab)."
+        return f"--sep inválido: {sep}. Use um único caractere (ou \\t para tabulação)."
     if encoding is not None:
         try:
             codecs.lookup(encoding)
         except LookupError:
-            return f"Unknown --encoding: {encoding}"
+            return f"--encoding desconhecido: {encoding}"
     return None
 
 
