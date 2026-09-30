@@ -4,13 +4,9 @@ import csv
 
 import polars as pl
 
+from ..execution_log import log
 from .file_type import FileType
 from .sqlite import read_sqlite, write_sqlite
-
-try:
-    from execution_log import log
-except ImportError:
-    from ..execution_log import log
 
 _CSV_DELIMITERS = ",;\t|"
 _SNIFF_BYTES = 64 * 1024

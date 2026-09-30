@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sqlite3
 import tempfile
 from contextlib import contextmanager
 from datetime import date
@@ -115,6 +116,43 @@ class TestConvertCommand:
             assert result.exit_code == 0
             assert "(3, 2)" in result.stdout
 
+    def test_convert_sqlite_escapes_quotes_in_column_names(self, runner):
+        with isolated_filesystem():
+            # JSON e não CSV: o leitor de CSV do polars não trata bem `"` em
+            # cabeçalho, o que não é o que este teste cobre.
+            with open("origem.json", "w", encoding="utf8") as f:
+                f.write('[{"a\\"b": 1, "c": "x"}]')
+
+            result = runner.invoke(app, ["convert", "origem.json", "destino.db"])
+            assert result.exit_code == 0
+
+            conn = sqlite3.connect("destino.db")
+            try:
+                cursor = conn.execute('SELECT * FROM "destino"')
+                assert [column[0] for column in cursor.description] == ['a"b', "c"]
+                assert cursor.fetchall() == [(1, "x")]
+            finally:
+                conn.close()
+
+    def test_convert_sqlite_failed_write_keeps_existing_table(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("A,B\n1,x\n2,y\n")
+            # Coluna de lista: o sqlite3 não sabe gravar, então o INSERT falha.
+            with open("lista.json", "w", encoding="utf8") as f:
+                f.write('[{"A": [1]}]')
+
+            assert (
+                runner.invoke(app, ["convert", "dados.csv", "dados.db"]).exit_code == 0
+            )
+            result = runner.invoke(app, ["convert", "lista.json", "dados.db"])
+            assert result.exit_code == 1
+            assert "Could not save file dados.db as sqlite:" in result.stdout
+
+            runner.invoke(app, ["convert", "dados.db", "volta.csv"])
+            with open("volta.csv", encoding="utf8") as f:
+                assert f.read() == "A,B\n1,x\n2,y\n"
+
 
 class TestInfoCommand:
     def test_info_nonexistent_file(self, runner):
@@ -131,6 +169,7 @@ class TestInfoCommand:
             result = runner.invoke(app, ["info", "dados.txt"])
             assert result.exit_code != 0
             assert "Could not infer" in result.stdout
+            assert "sqlite" in result.stdout
 
     def test_info_no_problems(self, runner):
         with isolated_filesystem():
@@ -314,6 +353,20 @@ class TestCleanCommand:
             result = runner.invoke(app, ["clean", "dados.txt"])
             assert result.exit_code != 0
             assert "Could not infer" in result.stdout
+            # `clean` não tem --from-type; a mensagem lista as extensões aceitas.
+            assert "--from-type" not in result.stdout
+            assert "parquet" in result.stdout and "sqlite" in result.stdout
+
+    def test_clean_unsupported_output_extension(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("A\nx \n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--trim", "--output", "saida.txt"]
+            )
+            assert result.exit_code == 2
+            assert "Supported extensions: csv, json" in result.stdout
 
     def test_clean_no_problems(self, runner):
         with isolated_filesystem():
@@ -336,11 +389,7 @@ class TestCleanCommand:
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:
                 f.write(
-                    "email\n"
-                    "ana@x.com\n"
-                    "bruno@x.com\n"
-                    "invalido-sem-arroba\n"
-                    "carla@x.com\n"
+                    "email\nana@x.com\nbruno@x.com\ninvalido-sem-arroba\ncarla@x.com\n"
                 )
 
             result = runner.invoke(app, ["clean", "dados.csv"])
@@ -435,6 +484,26 @@ class TestCleanStringOperators:
             assert result.exit_code == 0
             with open("saida.csv", encoding="utf8") as f:
                 assert f.read() == "nome\nANA\nBRUNO\n"
+
+    @pytest.mark.parametrize(
+        "flags",
+        [
+            ["--lowercase", "--uppercase"],
+            ["--lowercase", "--normalize-case"],
+            ["--uppercase", "--normalize-case"],
+        ],
+    )
+    def test_clean_case_operators_are_mutually_exclusive(self, runner, flags):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nana\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", *flags, "--output", "saida.csv"]
+            )
+            assert result.exit_code == 2
+            assert "mutually exclusive" in result.stdout
+            assert not os.path.exists("saida.csv")
 
     def test_clean_normalize_case_unifies_variants(self, runner):
         with isolated_filesystem():
@@ -591,6 +660,26 @@ class TestCleanRemoveDuplicates:
                 assert f.read() == "cidade\nPorto Alegre\nCuritiba\n"
 
 
+class TestCleanOperationRegistry:
+    def test_every_operation_is_an_option_and_vice_versa(self):
+        # Cada operação do registro é ligada pelo campo de mesmo nome em
+        # CleanOptions; um campo novo sem operação (ou o contrário) seria
+        # ignorado em silêncio por has_operations().
+        from dataclasses import fields
+
+        from datatool.clean import _OPERATIONS_BY_NAME, CleanOptions
+
+        parameters = {
+            "key",
+            "drop_null_columns",
+            "document_columns",
+            "date_columns",
+            "decimal_separator",
+        }
+        option_names = {field.name for field in fields(CleanOptions)}
+        assert option_names - parameters == set(_OPERATIONS_BY_NAME)
+
+
 class TestCleanFillNull:
     def test_fill_null_global_applies_only_to_text_columns(self, runner):
         with isolated_filesystem():
@@ -689,6 +778,27 @@ class TestCleanFillNull:
             assert result.exit_code != 0
             assert "Unknown column" in result.stdout
 
+    @pytest.mark.parametrize("value", ["abc", "1.5"])
+    def test_fill_null_rejects_value_incompatible_with_column_type(self, runner, value):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("idade\n\n25\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--fill-null",
+                    f"idade:{value}",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 2
+            assert f"Invalid value in --fill-null idade:{value}" in result.stdout
+            assert not os.path.exists("saida.csv")
+
 
 class TestCleanDropNull:
     def test_drop_null_default_all_columns(self, runner):
@@ -736,6 +846,27 @@ class TestCleanDropNull:
             )
             assert result.exit_code != 0
             assert "Unknown column" in result.stdout
+
+    def test_drop_null_columns_option_name(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,email\nAna,\n,bruno@x.com\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--drop-null",
+                    "--drop-null-columns",
+                    "email",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,email\n,bruno@x.com\n"
 
 
 class TestCleanNormalizeDates:
@@ -1115,7 +1246,7 @@ class TestCleanNormalizeDocuments:
         )
         # a coluna "telefone" só deve trazer a variação de formato já existente
         # (spec 005), nunca um finding de documento
-        telefone_section = result.stdout.split('telefone\n')[1].split("\n\n")[0]
+        telefone_section = result.stdout.split("telefone\n")[1].split("\n\n")[0]
         assert "CPF" not in telefone_section
         assert "CNPJ" not in telefone_section
 
@@ -1156,12 +1287,7 @@ class TestCleanNormalizeDocuments:
     def test_all_same_digits_reported_separately_from_invalid_checksum(self, runner):
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:
-                f.write(
-                    "cpf\n"
-                    "111.111.111-11\n"
-                    "000.000.000-00\n"
-                    "123.456.789-00\n"
-                )
+                f.write("cpf\n111.111.111-11\n000.000.000-00\n123.456.789-00\n")
             result = runner.invoke(app, ["clean", "dados.csv"])
             assert result.exit_code == 0
             assert "2 CPFs com todos os dígitos iguais" in result.stdout
@@ -1171,10 +1297,7 @@ class TestCleanNormalizeDocuments:
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:
                 f.write(
-                    "cnpj\n"
-                    "12.ABC.345/01DE-35\n"
-                    "11.222.333/0001-81\n"
-                    "11.444.777/0001-61\n"
+                    "cnpj\n12.ABC.345/01DE-35\n11.222.333/0001-81\n11.444.777/0001-61\n"
                 )
             result = runner.invoke(app, ["clean", "dados.csv"])
             assert result.exit_code == 0
@@ -1201,11 +1324,7 @@ class TestCleanNormalizeDocuments:
     def test_mixed_cpf_and_cnpj_column_separates_messages(self, runner):
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:
-                f.write(
-                    "documento\n"
-                    "12345678000100\n"
-                    "12345678900\n"
-                )
+                f.write("documento\n12345678000100\n12345678900\n")
             result = runner.invoke(app, ["clean", "dados.csv"])
             assert result.exit_code == 0
             assert "1 CNPJs com dígito verificador inválido" in result.stdout
@@ -1250,9 +1369,7 @@ class TestCleanNormalizeDocuments:
             )
             assert result.exit_code == 0
             with open("saida.csv", encoding="utf8") as f:
-                assert f.read() == (
-                    "documento\n529.982.247-25\n11.222.333/0001-81\n"
-                )
+                assert f.read() == ("documento\n529.982.247-25\n11.222.333/0001-81\n")
 
     def test_numeric_column_recovers_leading_zeros_as_text(self, runner):
         with isolated_filesystem():
@@ -1524,7 +1641,12 @@ class TestCleanNormalizeDocuments:
             with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
                 log = f.read()
             assert "documentos normalizados" in log
-            for value in ("123.456.789-00", "529.982.247-25", "12345678900", "52998224725"):
+            for value in (
+                "123.456.789-00",
+                "529.982.247-25",
+                "12345678900",
+                "52998224725",
+            ):
                 assert value not in log
 
 
@@ -2205,7 +2327,7 @@ class TestExecutionLog:
             assert '--fix-types: "idade" 1 valores não convertidos' in log
             assert "gravado saida.parquet (parquet) — 10 linhas, 2 colunas" in log
             assert "ERROR   [" in log
-            assert "Unknown column(s) in --columns: x" in log
+            assert "Unknown column(s) in --drop-null-columns: x" in log
             assert "fim — exit code 2" in log
 
     def test_no_cell_values_in_log(self, runner):
@@ -2238,7 +2360,7 @@ class TestExecutionLog:
         def boom(*args, **kwargs):
             raise RuntimeError("falha inesperada")
 
-        monkeypatch.setattr(main_module, "file_info", boom)
+        monkeypatch.setattr(main_module.info_command, "diagnose", boom)
         with isolated_filesystem():
             result = runner.invoke(app, ["info", "dados.csv"])
             assert result.exit_code == 1
@@ -2296,140 +2418,26 @@ class TestUtilsDecodeCommand:
         assert "from_value" in result.stdout
 
 
-class TestExcelCommand:
-    def test_default(self, runner):
+class TestNotImplementedCommands:
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["excel", "filename.xlsx"],
+            ["excel", "filename.xlsx", "--workbooks", "Sheet1", "--split"],
+            ["dataset", "translate", "filename.csv", "--to", "Portugues"],
+            ["dataset", "explain", "filename.csv", "--only-columns"],
+            ["dataset", "transform", "filename.csv", "--columns", "A"],
+            ["dataset", "decode", "filename.csv", "--to", "utf-8"],
+        ],
+    )
+    def test_fails_instead_of_pretending_success(self, runner, args):
         with isolated_filesystem():
-            result = runner.invoke(app, ["excel", "filename.xlsx"])
-            assert result.exit_code == 0
-            assert "" in result.stdout
+            result = runner.invoke(app, args)
+            assert result.exit_code == 1
+            assert "is not implemented yet" in result.stdout
 
-    def test_full(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "excel",
-                    "filename.xlsx",
-                    "--workbooks",
-                    "Sheet1",
-                    "--split",
-                    "--output",
-                    "output",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "" in result.stdout
-
-
-class TestDatasetTranslateCommand:
-    def test_default(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(app, ["dataset", "translate", "filename.csv"])
-            assert result.exit_code == 0
-            assert "To: Language.PORTUGUES" in result.stdout
-
-    def test_full(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "dataset",
-                    "translate",
-                    "filename.csv",
-                    "--to",
-                    "Portugues",
-                    "--only-header",
-                    "--output",
-                    "output.csv",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "To: Language.PORTUGUES" in result.stdout
-
-
-class TestDatasetExplainCommand:
-    def test_default(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(app, ["dataset", "explain", "filename.csv"])
-            assert result.exit_code == 0
-            assert "Only Columns: False" in result.stdout
-
-    def test_full(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "dataset",
-                    "explain",
-                    "filename.csv",
-                    "--only-columns",
-                    "--output",
-                    "output",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "Only Columns: True" in result.stdout
-
-
-class TestDatasetTransformCommand:
-    def test_default(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(app, ["dataset", "transform", "filename.csv"])
-            assert result.exit_code == 0
-            assert "Columns: None" in result.stdout
-
-    def test_full(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "dataset",
-                    "transform",
-                    "filename.csv",
-                    "--columns",
-                    "A",
-                    "--columns",
-                    "B",
-                    "--fillna",
-                    "Unknown",
-                    "--uppercase",
-                    "--replace",
-                    "Foo",
-                    "Bar",
-                    "--decode",
-                    "utf-8",
-                    "--decurse",
-                    "key1.key2",
-                    "--output",
-                    "output.csv",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "Columns: ['A', 'B']" in result.stdout
-
-
-class TestDatasetDecodeCommand:
-    def test_default(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(app, ["dataset", "decode", "filename.csv"])
-            assert result.exit_code == 0
-            assert "To: EncodingType.UTF8" in result.stdout
-
-    def test_full(self, runner):
-        with isolated_filesystem():
-            result = runner.invoke(
-                app,
-                [
-                    "dataset",
-                    "decode",
-                    "filename.csv",
-                    "--to",
-                    "utf-8",
-                    "--onerror",
-                    "ignore",
-                    "--output",
-                    "output.csv",
-                ],
-            )
-            assert result.exit_code == 0
-            assert "To: EncodingType.UTF8" in result.stdout
+    def test_hidden_from_help(self, runner):
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+        assert "excel" not in result.stdout
+        assert "dataset" not in result.stdout

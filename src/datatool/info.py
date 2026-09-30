@@ -1,27 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import os
+from collections import namedtuple
 
-try:
-    from execution_log import log
-    from quality import analyze, display_message, finding_to_dict, format_int_ptbr
-    from reporting import build_document, fail, file_summary, print_document
-    from structures import (
-        OutputFormat,
-        csv_options_error,
-        infer_file_type,
-        read_file,
-    )
-except ImportError:
-    from .execution_log import log
-    from .quality import analyze, display_message, finding_to_dict, format_int_ptbr
-    from .reporting import build_document, fail, file_summary, print_document
-    from .structures import (
-        OutputFormat,
-        csv_options_error,
-        infer_file_type,
-        read_file,
-    )
+from .execution_log import log
+from .loading import load_input
+from .quality import analyze, display_message, finding_to_dict, format_int_ptbr
+from .reporting import build_document
 
 _SUGGESTIONS = [
     ("types", "Corrigir tipos", "--fix-types"),
@@ -37,6 +22,8 @@ _SUGGESTIONS = [
 _SUGGESTION_TRIGGERS = {
     "documents": ("document_format_variance", "document_numeric_column"),
 }
+
+InfoResult = namedtuple("InfoResult", ["input", "findings", "suggestions"])
 
 
 def _suggestion_triggered(category, categories_found):
@@ -54,51 +41,11 @@ def _format_size(num_bytes):
         size /= 1024
 
 
-def info(
-    filename,
-    output_format=OutputFormat.TEXT,
-    sep=None,
-    encoding=None,
-    redact_values=False,
-):
-    # Verificar a existência e a validade do arquivo de entrada
-    if not os.path.exists(filename):
-        return fail(
-            output_format, "info", f"The file provided {filename} does not exist.", 2
-        )
-    if not os.path.isfile(filename):
-        return fail(
-            output_format,
-            "info",
-            f"The file provided {filename} is not a valid file.",
-            2,
-        )
+def diagnose(filename, sep=None, encoding=None):
+    """Diagnostica o arquivo; levanta `CommandError` se não conseguir lê-lo."""
+    loaded = load_input(filename, sep, encoding)
 
-    file_type = infer_file_type(filename)
-    if file_type is None:
-        return fail(
-            output_format,
-            "info",
-            f"Could not infer the format of {filename} from its extension. "
-            "Supported formats: csv, json, xlsx, parquet.",
-            2,
-        )
-
-    options_error = csv_options_error(file_type, sep, encoding)
-    if options_error:
-        return fail(output_format, "info", options_error, 2)
-
-    try:
-        df = read_file(file_type, filename, sep, encoding)
-    except Exception as error:
-        return fail(
-            output_format,
-            "info",
-            f"Could not load file {filename} as {file_type}: {error}",
-            1,
-        )
-
-    findings = analyze(df)
+    findings = analyze(loaded.df)
     log.info(
         "diagnóstico — %s problemas (%s)",
         len(findings),
@@ -110,42 +57,46 @@ def info(
         for category, label, flag in _SUGGESTIONS
         if _suggestion_triggered(category, categories_found)
     ]
+    return InfoResult(loaded, findings, suggestions)
 
-    if output_format == OutputFormat.JSON:
-        document = build_document(
-            "info",
-            status="ok",
-            file=file_summary(filename, file_type, df),
-            problems=[finding_to_dict(finding, redact_values) for finding in findings],
-            suggestions=[
-                {
-                    "category": category,
-                    "label": label,
-                    "command": f"datatool clean {filename} {flag}",
-                }
-                for category, label, flag in suggestions
-            ],
-        )
-        print_document(document)
-        return 0, document
 
+def to_document(result, redact_values=False):
+    loaded = result.input
+    return build_document(
+        "info",
+        status="ok",
+        file=loaded.summary,
+        problems=[
+            finding_to_dict(finding, redact_values) for finding in result.findings
+        ],
+        suggestions=[
+            {
+                "category": category,
+                "label": label,
+                "command": f"datatool clean {loaded.filename} {flag}",
+            }
+            for category, label, flag in result.suggestions
+        ],
+    )
+
+
+def print_text(result, redact_values=False):
+    filename, df = result.input.filename, result.input.df
     print(f"Arquivo: {filename}")
     print(f"Linhas: {format_int_ptbr(df.height)}")
     print(f"Colunas: {format_int_ptbr(df.width)}")
     print(f"Tamanho: {_format_size(os.path.getsize(filename))}")
     print()
 
-    if not findings:
+    if not result.findings:
         print("Nenhum problema encontrado.")
-        return 0, None
+        return
 
     print("Problemas encontrados:")
-    for finding in findings:
+    for finding in result.findings:
         print(f"  ⚠ {display_message(finding, redact_values)}")
     print()
 
     print("Sugestões:")
-    for index, (_, label, flag) in enumerate(suggestions, start=1):
+    for index, (_, label, flag) in enumerate(result.suggestions, start=1):
         print(f"  {index}. {label} → datatool clean {filename} {flag}")
-
-    return 0, None

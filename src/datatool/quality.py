@@ -552,10 +552,7 @@ def detect_case_inconsistency(df):
             groups.setdefault(value.casefold(), set()).add(value)
 
         variants = sorted(
-            variant
-            for group in groups.values()
-            if len(group) > 1
-            for variant in group
+            variant for group in groups.values() if len(group) > 1 for variant in group
         )
         if variants:
             shown = variants[:_CASE_GROUP_LIMIT]

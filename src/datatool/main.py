@@ -5,36 +5,21 @@ from typing import List, Optional, Tuple
 import typer
 from typing_extensions import Annotated
 
-try:
-    from clean import clean as file_clean
-    from convert import convert as file_convert
-    from execution_log import logged
-    from info import info as file_info
-    from profiler import profile as file_profile
-    from structures import (
-        EncodingType,
-        FileType,
-        Language,
-        OnErrorType,
-        OutputFormat,
-    )
-    from utils import decode as utils_decode
-    from utils import encode as utils_encode
-except ImportError:
-    from .clean import clean as file_clean
-    from .convert import convert as file_convert
-    from .execution_log import logged
-    from .info import info as file_info
-    from .profiler import profile as file_profile
-    from .structures import (
-        EncodingType,
-        FileType,
-        Language,
-        OnErrorType,
-        OutputFormat,
-    )
-    from .utils import decode as utils_decode
-    from .utils import encode as utils_encode
+from . import clean as clean_command
+from . import convert as convert_command
+from . import info as info_command
+from . import profiler as profile_command
+from .execution_log import logged
+from .reporting import CommandError, fail, print_document
+from .structures import (
+    EncodingType,
+    FileType,
+    Language,
+    OnErrorType,
+    OutputFormat,
+)
+from .utils import decode as utils_decode
+from .utils import encode as utils_encode
 
 app = typer.Typer()
 
@@ -66,10 +51,35 @@ RedactValuesOption = Annotated[
 ]
 
 dataset_app = typer.Typer()
-app.add_typer(dataset_app, name="dataset")
+app.add_typer(dataset_app, name="dataset", hidden=True)
 
 utils_app = typer.Typer()
 app.add_typer(utils_app, name="utils")
+
+
+def _emit(command, output_format, run, to_document, print_text):
+    """Roda o comando e escreve o resultado (texto ou JSON) ou o erro no stdout.
+
+    `run` levanta `CommandError` em falhas esperadas; qualquer outra exceção
+    sobe para o `@logged`, que a registra com traceback.
+    """
+    try:
+        result = run()
+    except CommandError as error:
+        fail(output_format, command, error)
+        raise typer.Exit(code=error.exit_code)
+
+    if output_format == OutputFormat.JSON:
+        print_document(to_document(result))
+    else:
+        print_text(result)
+
+
+def _not_implemented(command):
+    # Comandos-esqueleto: ocultos no --help e com exit != 0, para que scripts e
+    # agentes não confundam o placeholder com uma execução bem-sucedida.
+    print(f"Command '{command}' is not implemented yet.")
+    raise typer.Exit(code=1)
 
 
 # ----------------------------------------------------------------
@@ -80,19 +90,27 @@ app.add_typer(utils_app, name="utils")
 def convert(
     filename: str,
     to_filename: Optional[str] = typer.Argument(None),
-    from_type: Annotated[
-        Optional[FileType], typer.Option(case_sensitive=False)
-    ] = None,
+    from_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
     to_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
     show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
     sep: SepOption = None,
     encoding: EncodingOption = None,
 ):
-    result, _document = file_convert(
-        filename, from_type, to_type, to_filename, show_stats, sep, encoding
+    _emit(
+        "convert",
+        OutputFormat.TEXT,
+        lambda: convert_command.convert(
+            filename,
+            to_filename=to_filename,
+            from_type=from_type,
+            to_type=to_type,
+            sep=sep,
+            encoding=encoding,
+            reload_target=show_stats,
+        ),
+        to_document=None,
+        print_text=lambda result: convert_command.print_text(result, show_stats),
     )
-    if result > 0:
-        raise typer.Exit(code=result)
 
 
 # ----------------------------------------------------------------
@@ -107,9 +125,13 @@ def info(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
 ):
-    result, _document = file_info(filename, output_format, sep, encoding, redact_values)
-    if result > 0:
-        raise typer.Exit(code=result)
+    _emit(
+        "info",
+        output_format,
+        lambda: info_command.diagnose(filename, sep=sep, encoding=encoding),
+        to_document=lambda result: info_command.to_document(result, redact_values),
+        print_text=lambda result: info_command.print_text(result, redact_values),
+    )
 
 
 # ----------------------------------------------------------------
@@ -142,18 +164,20 @@ def profile(
     ] = None,
     redact_values: RedactValuesOption = False,
 ):
-    result, _document = file_profile(
-        filename,
-        key,
+    _emit(
+        "profile",
         output_format,
-        sep,
-        encoding,
-        columns,
-        max_columns,
-        redact_values,
+        lambda: profile_command.run(
+            filename,
+            key=key,
+            sep=sep,
+            encoding=encoding,
+            columns=columns,
+            max_columns=max_columns,
+        ),
+        to_document=lambda result: profile_command.to_document(result, redact_values),
+        print_text=lambda result: profile_command.print_text(result, redact_values),
     )
-    if result > 0:
-        raise typer.Exit(code=result)
 
 
 # ----------------------------------------------------------------
@@ -167,9 +191,7 @@ def clean(
     lowercase: Annotated[bool, typer.Option("--lowercase")] = False,
     uppercase: Annotated[bool, typer.Option("--uppercase")] = False,
     normalize_case: Annotated[bool, typer.Option("--normalize-case")] = False,
-    remove_duplicates: Annotated[
-        bool, typer.Option("--remove-duplicates")
-    ] = False,
+    remove_duplicates: Annotated[bool, typer.Option("--remove-duplicates")] = False,
     key: Annotated[
         Optional[str],
         typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
@@ -182,9 +204,14 @@ def clean(
         ),
     ] = None,
     drop_null: Annotated[bool, typer.Option("--drop-null")] = False,
-    columns: Annotated[
+    drop_null_columns: Annotated[
         Optional[str],
-        typer.Option(help="Colunas alvo de --drop-null, separadas por vírgula"),
+        typer.Option(
+            "--drop-null-columns",
+            # Nome antigo, mantido para não quebrar scripts.
+            "--columns",
+            help="Colunas alvo de --drop-null, separadas por vírgula",
+        ),
     ] = None,
     normalize_documents: Annotated[
         Optional[str],
@@ -227,39 +254,60 @@ def clean(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
 ):
-    result, _document = file_clean(
-        filename,
-        trim,
-        lowercase,
-        uppercase,
-        normalize_case,
-        remove_duplicates,
-        key,
-        fill_null,
-        drop_null,
-        columns,
-        normalize_documents,
-        document_columns,
-        normalize_dates,
-        date_columns,
-        fix_types,
-        decimal_separator,
-        rename_columns,
-        remove_columns,
-        output,
-        output_format,
-        sep,
-        encoding,
-        redact_values,
+    options = clean_command.CleanOptions(
+        trim=trim,
+        lowercase=lowercase,
+        uppercase=uppercase,
+        normalize_case=normalize_case,
+        remove_duplicates=remove_duplicates,
+        key=key,
+        fill_null=fill_null,
+        drop_null=drop_null,
+        drop_null_columns=drop_null_columns,
+        normalize_documents=normalize_documents,
+        document_columns=document_columns,
+        normalize_dates=normalize_dates,
+        date_columns=date_columns,
+        fix_types=fix_types,
+        decimal_separator=decimal_separator,
+        rename_columns=rename_columns,
+        remove_columns=remove_columns,
     )
-    if result > 0:
-        raise typer.Exit(code=result)
+
+    if not options.has_operations():
+        _emit(
+            "clean",
+            output_format,
+            lambda: clean_command.diagnose(filename, sep=sep, encoding=encoding),
+            to_document=lambda result: clean_command.diagnosis_document(
+                result, redact_values
+            ),
+            print_text=lambda result: clean_command.print_diagnosis(
+                result, redact_values
+            ),
+        )
+        return
+
+    # No JSON, o stdout é só o relatório: o DataFrame precisa ir para um arquivo.
+    if output_format == OutputFormat.JSON and output is None:
+        fail(output_format, "clean", CommandError("--format json requires --output", 2))
+        raise typer.Exit(code=2)
+
+    _emit(
+        "clean",
+        output_format,
+        lambda: clean_command.apply_operations(
+            filename, options, output=output, sep=sep, encoding=encoding
+        ),
+        to_document=lambda result: clean_command.result_document(result, redact_values),
+        print_text=lambda result: clean_command.print_result(result, redact_values),
+    )
 
 
 # ----------------------------------------------------------------
 # Excel commands
 # ----------------------------------------------------------------
-@app.command("excel")
+@app.command("excel", hidden=True)
 @logged("excel")
 def excel(
     filename: str,
@@ -267,12 +315,7 @@ def excel(
     split: Annotated[bool, typer.Option("--split")] = False,
     output: str = None,
 ):
-    print(
-        f"""Filename: {filename} 
-            Workbooks: {workbooks}
-            Split: {split} 
-            Output: {output}"""
-    )
+    _not_implemented("excel")
 
 
 # ----------------------------------------------------------------
@@ -286,12 +329,7 @@ def dataset_translate(
     only_header: Annotated[bool, typer.Option("--only-header")] = False,
     output: str = None,
 ):
-    print(
-        f"""Filename: {filename} 
-            To: {to}
-            Only Header: {only_header} 
-            Output: {output}"""
-    )
+    _not_implemented("dataset translate")
 
 
 @dataset_app.command("explain")
@@ -301,11 +339,7 @@ def dataset_explain(
     only_columns: Annotated[bool, typer.Option("--only-columns")] = False,
     output: str = None,
 ):
-    print(
-        f"""Filename: {filename} 
-            Only Columns: {only_columns}
-            Output: {output}"""
-    )
+    _not_implemented("dataset explain")
 
 
 @dataset_app.command("transform")
@@ -322,18 +356,7 @@ def dataset_transform(
     decurse: str = None,
     output: str = None,
 ):
-    print(
-        f"""Filename: {filename} 
-            Columns: {columns}
-            fillna: {fillna}
-            capitalize: {capitalize}
-            uppercase: {uppercase}
-            lowercase: {lowercase}
-            replace: {replace}
-            decode: {decode}
-            decurse: {decurse}
-            Output: {output}"""
-    )
+    _not_implemented("dataset transform")
 
 
 @dataset_app.command("decode")
@@ -347,13 +370,7 @@ def dataset_decode(
     onerror_value: str = None,
     output: str = None,
 ):
-    print(
-        f"""Filename: {filename} 
-            To: {to}
-            OnError: {onerror}
-            OnErrorValue: {onerror_value}
-            Output: {output}"""
-    )
+    _not_implemented("dataset decode")
 
 
 # ----------------------------------------------------------------

@@ -1,5 +1,5 @@
 from .encoding_type import EncodingType
-from .file_type import FileType, infer_file_type
+from .file_type import SUPPORTED_EXTENSIONS, FileType, infer_file_type
 from .functions import (
     csv_options_error,
     read_file,

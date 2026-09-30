@@ -2,10 +2,7 @@
 
 from collections import namedtuple
 
-try:
-    from quality import duplicate_row_count
-except ImportError:
-    from .quality import duplicate_row_count
+from .quality import duplicate_row_count
 
 ColumnProfile = namedtuple(
     "ColumnProfile",
@@ -84,9 +81,9 @@ def profile_column(df, column, top_n=TOP_N):
         kind="numeric" if is_numeric else "categorical",
         null_count=null_count,
         null_percent=null_percent,
-        stats=_numeric_stats(series) if is_numeric else _categorical_stats(
-            series, top_n
-        ),
+        stats=_numeric_stats(series)
+        if is_numeric
+        else _categorical_stats(series, top_n),
     )
 
 

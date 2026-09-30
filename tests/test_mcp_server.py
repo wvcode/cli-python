@@ -4,6 +4,8 @@ import shutil
 import tempfile
 from contextlib import contextmanager
 
+import pytest
+
 from datatool import mcp_server
 
 
@@ -326,6 +328,10 @@ class TestDatatoolConvert:
                 to_filename="saida.parquet",
             )
             assert result.is_error is True
+            # Antes, o erro do convert voltava como "Unknown error", sem documento.
+            assert "does not exist" in result.content[0].text
+            assert result.structured_content["command"] == "convert"
+            assert result.structured_content["error"]["exit_code"] == 2
 
     def test_sandbox_violation(self):
         with isolated_filesystem():
@@ -406,3 +412,45 @@ class TestExecutionLog:
             assert "mcp info" in log
             assert "São Paulo" not in log
             assert "Curitiba" not in log
+
+
+class TestMissingMcpDependency:
+    def test_main_explains_how_to_install_the_extra(self, monkeypatch):
+        # Simula `pip install datatool-cli` sem o extra `[mcp]`.
+        monkeypatch.setattr(mcp_server, "MCPServer", None)
+        monkeypatch.setattr("sys.argv", ["datatool-mcp"])
+
+        with pytest.raises(SystemExit) as exit_info:
+            mcp_server.main()
+        assert exit_info.value.code == mcp_server.MISSING_MCP_MESSAGE
+        assert "pip install 'datatool-cli[mcp]'" in mcp_server.MISSING_MCP_MESSAGE
+
+
+class TestNoStdoutWrites:
+    def test_tools_never_write_to_stdout(self, capsys):
+        # O stdout é o canal JSON-RPC do transporte stdio: nenhuma ferramenta
+        # pode imprimir nele, nem em caso de sucesso nem de erro.
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,idade\n Ana ,30\nAna,\n")
+            server = mcp_server.build_server(".")
+
+            _call(server, "datatool_info", filename="dados.csv")
+            _call(server, "datatool_profile", filename="dados.csv")
+            _call(server, "datatool_clean_diagnose", filename="dados.csv")
+            _call(
+                server,
+                "datatool_clean_apply",
+                filename="dados.csv",
+                output="saida.csv",
+                trim=True,
+            )
+            _call(
+                server,
+                "datatool_convert",
+                filename="dados.csv",
+                to_filename="saida.json",
+            )
+            _call(server, "datatool_info", filename="naoexiste.csv")
+
+            assert capsys.readouterr().out == ""

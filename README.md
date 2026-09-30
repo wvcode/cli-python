@@ -55,6 +55,7 @@ datatool convert vendas.xlsx vendas.csv
 ```
 
 - Formatos suportados: **CSV, JSON, JSONL, Excel (xlsx), Parquet, SQLite**, além de Feather e Avro.
+- SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Se ela já existir, é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
 - Se `to_filename` for omitido, o resultado é impresso no stdout em vez de gravado em arquivo.
 - `--show-stats` imprime (linhas, colunas) da origem e do destino.
@@ -198,7 +199,7 @@ datatool clean clientes.csv --uppercase --output clientes_limpo.csv
 - `--trim` remove espaços extras nas bordas
 - `--lowercase` / `--uppercase` convertem a caixa de todo o texto da coluna
 - `--normalize-case` unifica variações de capitalização em title case (`"PORTO ALEGRE"`/`"porto alegre"` → `"Porto Alegre"`)
-- As flags são combináveis; quando combinadas, são aplicadas na ordem `--trim` → `--lowercase` → `--uppercase` → `--normalize-case`
+- `--trim` combina com qualquer uma das outras e roda primeiro; `--lowercase`, `--uppercase` e `--normalize-case` são mutuamente exclusivas (passar duas é erro, exit code 2)
 
 ```text
 nome,email,telefone,cpf,cidade
@@ -224,12 +225,12 @@ datatool clean clientes.csv --remove-duplicates --key cpf --output clientes_limp
 datatool clean clientes.csv --fill-null "N/A"
 datatool clean clientes.csv --fill-null "idade:0" --output clientes_limpo.csv
 datatool clean clientes.csv --drop-null
-datatool clean clientes.csv --drop-null --columns email --output clientes_limpo.csv
+datatool clean clientes.csv --drop-null --drop-null-columns email --output clientes_limpo.csv
 ```
 
 - `--fill-null valor` (sem `:`) preenche nulos só nas colunas de texto — evita converter uma coluna numérica inteira para texto ao preencher com um valor não numérico
-- `--fill-null coluna:valor` preenche só essa coluna, convertendo o valor para o tipo da coluna quando ela é numérica; é repetível (`--fill-null "N/A" --fill-null "idade:0"`)
-- `--drop-null` remove linhas com nulos em qualquer coluna por padrão, ou só nas colunas de `--columns coluna1,coluna2`
+- `--fill-null coluna:valor` preenche só essa coluna, convertendo o valor para o tipo da coluna quando ela é numérica; um valor incompatível com o tipo (ex.: `idade:abc`) é erro, exit code 2, em vez de transformar a coluna em texto; é repetível (`--fill-null "N/A" --fill-null "idade:0"`)
+- `--drop-null` remove linhas com nulos em qualquer coluna por padrão, ou só nas colunas de `--drop-null-columns coluna1,coluna2` (`--columns` continua aceito como nome antigo)
 
 `--normalize-dates` converte datas em formatos variados para ISO 8601 (`yyyy-mm-dd`):
 
@@ -280,7 +281,7 @@ datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp --output v
 ```
 
 - Coluna inexistente, entrada sem `:` em `--rename-columns` ou renomeação que geraria nomes repetidos são erro claro, sem gravar nada
-- São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
+- São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--drop-null-columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
 
 `--normalize-documents` valida e padroniza CPF/CNPJ, inclusive o CNPJ alfanumérico (letras nas 12 primeiras posições, emitido pela Receita desde julho de 2026):
 
@@ -403,7 +404,7 @@ Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como f
 
 ### Em desenvolvimento
 
-Os comandos abaixo já existem no CLI como esqueleto, mas ainda não implementam a lógica final — acompanhe o status em [specs/README.md](specs/README.md):
+Os comandos abaixo ainda não estão implementados: ficam ocultos no `--help` e, se chamados, saem com exit code 1 e a mensagem `is not implemented yet` — acompanhe o status em [specs/README.md](specs/README.md):
 
 - `datatool dataset translate|explain|transform|decode`
 - `datatool excel` — inspeção/limpeza de planilhas Excel

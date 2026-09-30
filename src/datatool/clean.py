@@ -1,57 +1,35 @@
 # -*- coding: utf-8 -*-
 
-import os
 import re
+from collections import namedtuple
+from dataclasses import dataclass
 from datetime import datetime
+from typing import List, Optional
 
 import polars as pl
 
-try:
-    from execution_log import log
-    from quality import (
-        _DATE_MATCH_RATIO,
-        _NUMERIC_MATCH_RATIO,
-        _document_shape_for,
-        _mask_document,
-        _sample_values,
-        _validate_document,
-        analyze_clean,
-        detect_document_columns,
-        display_message,
-        finding_to_dict,
-        format_int_ptbr,
-    )
-    from reporting import build_document, fail, file_summary, print_document
-    from structures import (
-        OutputFormat,
-        csv_options_error,
-        infer_file_type,
-        read_file,
-        save_file,
-    )
-except ImportError:
-    from .execution_log import log
-    from .quality import (
-        _DATE_MATCH_RATIO,
-        _NUMERIC_MATCH_RATIO,
-        _document_shape_for,
-        _mask_document,
-        _sample_values,
-        _validate_document,
-        analyze_clean,
-        detect_document_columns,
-        display_message,
-        finding_to_dict,
-        format_int_ptbr,
-    )
-    from .reporting import build_document, fail, file_summary, print_document
-    from .structures import (
-        OutputFormat,
-        csv_options_error,
-        infer_file_type,
-        read_file,
-        save_file,
-    )
+from .execution_log import log
+from .loading import (
+    load_input,
+    output_file_type,
+    parse_column_list,
+    resolve_columns,
+    write_output,
+)
+from .quality import (
+    _DATE_MATCH_RATIO,
+    _NUMERIC_MATCH_RATIO,
+    _document_shape_for,
+    _mask_document,
+    _sample_values,
+    _validate_document,
+    analyze_clean,
+    detect_document_columns,
+    display_message,
+    finding_to_dict,
+    format_int_ptbr,
+)
+from .reporting import CommandError, build_document
 
 _YEAR_FIRST_FORMATS = [
     "%Y-%m-%d",
@@ -74,80 +52,79 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 _UNRECOGNIZED_LIMIT = 10
 
 
-class CleanError(Exception):
-    def __init__(self, message, code):
-        super().__init__(message)
-        self.message = message
-        self.code = code
+@dataclass(frozen=True)
+class CleanOptions:
+    """Operações pedidas ao `clean`. Cada campo com o nome de uma operação de
+    `_OPERATIONS` a liga; os demais são parâmetros dessas operações."""
+
+    trim: bool = False
+    lowercase: bool = False
+    uppercase: bool = False
+    normalize_case: bool = False
+    remove_duplicates: bool = False
+    key: Optional[str] = None
+    fill_null: Optional[List[str]] = None
+    drop_null: bool = False
+    drop_null_columns: Optional[str] = None
+    normalize_documents: Optional[str] = None
+    document_columns: Optional[str] = None
+    normalize_dates: bool = False
+    date_columns: Optional[str] = None
+    fix_types: bool = False
+    decimal_separator: Optional[str] = None
+    rename_columns: Optional[str] = None
+    remove_columns: Optional[str] = None
+
+    def has_operations(self):
+        return any(
+            getattr(self, operation.name)
+            for operations in _OPERATION_PHASES
+            for operation in operations
+        )
 
 
-def _print_diagnostics(filename, df, findings, redact_values):
-    print(f"Arquivo: {filename}")
-    print(f"Linhas: {format_int_ptbr(df.height)}")
-    print(f"Colunas: {format_int_ptbr(df.width)}")
-    print()
-
-    if not findings:
-        print("Nenhum problema encontrado.")
-        return
-
-    findings_by_column = {}
-    for finding in findings:
-        message = display_message(finding, redact_values)
-        findings_by_column.setdefault(finding.column, []).append(message)
-
-    for column in df.columns:
-        if column not in findings_by_column:
-            continue
-        print(column)
-        for message in findings_by_column[column]:
-            print(f"  {message}")
-        print()
+CleanDiagnosis = namedtuple("CleanDiagnosis", ["input", "findings"])
+CleanResult = namedtuple(
+    "CleanResult", ["input", "df", "reports", "output", "output_type"]
+)
 
 
-def _apply_string_operators(df, trim, lowercase, uppercase, normalize_case):
-    text_columns = [column for column in df.columns if df[column].dtype == pl.Utf8]
-    for column in text_columns:
-        series = df[column]
-        if trim:
-            series = series.str.strip_chars()
-        if lowercase:
-            series = series.str.to_lowercase()
-        if uppercase:
-            series = series.str.to_uppercase()
-        if normalize_case:
-            series = series.str.to_titlecase()
-        df = df.with_columns(series.alias(column))
-    return df
+# ----------------------------------------------------------------
+# Operações: cada `_apply_*` recebe (df, options) e devolve (df, campos do
+# relatório); `_print_*` e `_log_*` apresentam esse relatório.
+# ----------------------------------------------------------------
+def _string_operator(method):
+    def apply(df, options):
+        text_columns = [column for column in df.columns if df[column].dtype == pl.Utf8]
+        df = df.with_columns(
+            getattr(pl.col(column).str, method)() for column in text_columns
+        )
+        return df, {}
+
+    return apply
 
 
-def _apply_remove_duplicates(df, key_columns):
+def _apply_remove_duplicates(df, options):
+    key_columns = parse_column_list(options.key) if options.key else None
     before = df.height
     df = df.unique(subset=key_columns, keep="first", maintain_order=True)
-    removed = before - df.height
-    return df, {"operation": "remove_duplicates", "rows_removed": removed}
+    return df, {"rows_removed": before - df.height}
 
 
 _DOCUMENT_MODES = ("digits", "masked")
 
 
-def _apply_normalize_documents(df, mode, document_columns_spec):
+def _apply_normalize_documents(df, options):
+    mode = options.normalize_documents
     if mode not in _DOCUMENT_MODES:
-        raise CleanError(
+        raise CommandError(
             f"Invalid --normalize-documents: {mode}. Use 'digits' or 'masked'", 2
         )
 
-    if document_columns_spec:
-        document_columns = _parse_column_list(document_columns_spec)
-        unknown_columns = [
-            column for column in document_columns if column not in df.columns
-        ]
-        if unknown_columns:
-            raise CleanError(
-                "Unknown column(s) in --document-columns: "
-                f"{', '.join(unknown_columns)}",
-                2,
-            )
+    if options.document_columns:
+        document_columns = resolve_columns(
+            df, options.document_columns, "--document-columns"
+        )
     else:
         document_columns = detect_document_columns(df)
 
@@ -193,7 +170,7 @@ def _apply_normalize_documents(df, mode, document_columns_spec):
             }
         )
 
-    return df, {"operation": "normalize_documents", "columns": column_reports}
+    return df, {"columns": column_reports}
 
 
 def _parse_date(value, formats):
@@ -240,22 +217,14 @@ def _detect_date_columns(df):
     return date_columns
 
 
-def _apply_normalize_dates(df, date_columns_spec):
-    if date_columns_spec:
-        date_columns = [column.strip() for column in date_columns_spec.split(",")]
-        unknown_columns = [
-            column for column in date_columns if column not in df.columns
-        ]
-        if unknown_columns:
-            raise CleanError(
-                f"Unknown column(s) in --date-columns: {', '.join(unknown_columns)}",
-                2,
-            )
+def _apply_normalize_dates(df, options):
+    if options.date_columns:
+        date_columns = resolve_columns(df, options.date_columns, "--date-columns")
         non_text_columns = [
             column for column in date_columns if df[column].dtype != pl.Utf8
         ]
         if non_text_columns:
-            raise CleanError(
+            raise CommandError(
                 "Column(s) in --date-columns are not text: "
                 f"{', '.join(non_text_columns)}",
                 2,
@@ -290,17 +259,7 @@ def _apply_normalize_dates(df, date_columns_spec):
             }
         )
 
-    return df, {"operation": "normalize_dates", "columns": column_reports}
-
-
-def _print_examples(examples, distinct_count, redact_values=False):
-    if redact_values:
-        print("  (valores ocultos por --redact-values)")
-        return
-    for value in examples:
-        print(f'  "{value}"')
-    if distinct_count > len(examples):
-        print(f"  ... e mais {distinct_count - len(examples)} valores")
+    return df, {"columns": column_reports}
 
 
 def _strip_number(value):
@@ -350,9 +309,10 @@ def _detect_numeric_text_columns(df, decimal_separator):
     return numeric_columns
 
 
-def _apply_fix_types(df, decimal_separator):
+def _apply_fix_types(df, options):
+    decimal_separator = options.decimal_separator
     if decimal_separator is not None and decimal_separator not in _NUMBER_PATTERNS:
-        raise CleanError(
+        raise CommandError(
             f"Invalid --decimal-separator: {decimal_separator}. Use ',' or '.'", 2
         )
 
@@ -391,7 +351,7 @@ def _apply_fix_types(df, decimal_separator):
             }
         )
 
-    return df, {"operation": "fix_types", "columns": column_reports}
+    return df, {"columns": column_reports}
 
 
 def _cast_fill_value(value, dtype):
@@ -408,19 +368,27 @@ def _cast_fill_value(value, dtype):
     return value
 
 
-def _apply_fill_null(df, fill_null_specs):
+def _apply_fill_null(df, options):
     total_filled = 0
-    for spec in fill_null_specs:
+    for spec in options.fill_null:
         column_name, separator, value = spec.partition(":")
         if separator:
             if column_name not in df.columns:
-                raise CleanError(
-                    f"Unknown column in --fill-null: {column_name}", 2
-                )
+                raise CommandError(f"Unknown column in --fill-null: {column_name}", 2)
             null_count = df[column_name].null_count()
             if null_count:
-                casted_value = _cast_fill_value(value, df[column_name].dtype)
-                df = df.with_columns(pl.col(column_name).fill_null(casted_value))
+                dtype = df[column_name].dtype
+                casted_value = _cast_fill_value(value, dtype)
+                filled = df.with_columns(pl.col(column_name).fill_null(casted_value))
+                # Valor incompatível faz o polars promover a coluna inteira a
+                # texto: recusa em vez de trocar o tipo em silêncio.
+                if filled[column_name].dtype != dtype:
+                    raise CommandError(
+                        f"Invalid value in --fill-null {spec}: "
+                        f"column {column_name} is {dtype}",
+                        2,
+                    )
+                df = filled
                 total_filled += null_count
         else:
             value = spec
@@ -432,59 +400,39 @@ def _apply_fill_null(df, fill_null_specs):
                     df = df.with_columns(pl.col(column).fill_null(value))
                     total_filled += null_count
 
-    return df, {"operation": "fill_null", "cells_filled": total_filled}
+    return df, {"cells_filled": total_filled}
 
 
-def _apply_drop_null(df, columns_spec):
+def _apply_drop_null(df, options):
     subset = None
-    if columns_spec:
-        subset = [column.strip() for column in columns_spec.split(",")]
-        unknown_columns = [column for column in subset if column not in df.columns]
-        if unknown_columns:
-            raise CleanError(
-                f"Unknown column(s) in --columns: {', '.join(unknown_columns)}", 2
-            )
+    if options.drop_null_columns:
+        subset = resolve_columns(df, options.drop_null_columns, "--drop-null-columns")
 
     before = df.height
     df = df.drop_nulls(subset=subset)
-    removed = before - df.height
-    return df, {"operation": "drop_null", "rows_removed": removed}
+    return df, {"rows_removed": before - df.height}
 
 
-def _parse_column_list(spec):
-    return [column.strip() for column in spec.split(",")]
-
-
-def _apply_remove_columns(df, remove_columns_spec):
-    to_remove = _parse_column_list(remove_columns_spec)
-    unknown_columns = [column for column in to_remove if column not in df.columns]
-    if unknown_columns:
-        raise CleanError(
-            f"Unknown column(s) in --remove-columns: {', '.join(unknown_columns)}",
-            2,
-        )
-
+def _apply_remove_columns(df, options):
+    to_remove = resolve_columns(df, options.remove_columns, "--remove-columns")
     df = df.drop(to_remove)
-    return df, {
-        "operation": "remove_columns",
-        "columns": list(dict.fromkeys(to_remove)),
-    }
+    return df, {"columns": list(dict.fromkeys(to_remove))}
 
 
-def _apply_rename_columns(df, rename_columns_spec):
+def _apply_rename_columns(df, options):
     mapping = {}
-    for entry in _parse_column_list(rename_columns_spec):
+    for entry in parse_column_list(options.rename_columns):
         old_name, separator, new_name = entry.partition(":")
         old_name, new_name = old_name.strip(), new_name.strip()
         if not separator or not old_name or not new_name:
-            raise CleanError(
+            raise CommandError(
                 f"Invalid entry in --rename-columns: {entry}. Use old:new", 2
             )
         mapping[old_name] = new_name
 
     unknown_columns = [column for column in mapping if column not in df.columns]
     if unknown_columns:
-        raise CleanError(
+        raise CommandError(
             f"Unknown column(s) in --rename-columns: {', '.join(unknown_columns)}",
             2,
         )
@@ -494,172 +442,308 @@ def _apply_rename_columns(df, rename_columns_spec):
         {column for column in new_columns if new_columns.count(column) > 1}
     )
     if duplicated:
-        raise CleanError(
+        raise CommandError(
             "--rename-columns would create duplicate column(s): "
             f"{', '.join(duplicated)}",
             2,
         )
 
     df = df.rename(mapping)
-    return df, {"operation": "rename_columns", "mapping": mapping}
+    return df, {"mapping": mapping}
 
 
-def _print_report(report, redact_values):
-    operation = report["operation"]
-    if operation == "remove_columns":
-        print(f"{format_int_ptbr(len(report['columns']))} colunas removidas")
-    elif operation == "rename_columns":
-        print(f"{format_int_ptbr(len(report['mapping']))} colunas renomeadas")
-    elif operation == "normalize_documents":
-        if not report["columns"]:
-            print("Nenhuma coluna de documento encontrada")
-        for column_report in report["columns"]:
-            column = column_report["column"]
-            print(
-                f'"{column}": {format_int_ptbr(column_report["normalized"])} '
-                "documentos normalizados"
-            )
-            if column_report["still_invalid_count"]:
-                print(
-                    f'"{column}": '
-                    f"{format_int_ptbr(column_report['still_invalid_count'])} com "
-                    "dígito verificador inválido (formatados, mas continuam "
-                    "inválidos)"
-                )
-            if column_report["unrecognized_count"]:
-                print(
-                    f'"{column}": '
-                    f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
-                    "fora do formato de CPF/CNPJ, mantidos sem alteração:"
-                )
-                _print_examples(
-                    column_report["unrecognized_examples"],
-                    column_report["unrecognized_distinct"],
-                    redact_values,
-                )
-    elif operation == "normalize_dates":
-        if not report["columns"]:
-            print("Nenhuma coluna de data encontrada")
-        for column_report in report["columns"]:
-            column = column_report["column"]
-            print(
-                f'"{column}": {format_int_ptbr(column_report["normalized"])} '
-                "datas normalizadas"
-            )
-            if column_report["unrecognized_count"]:
-                print(
-                    f'"{column}": '
-                    f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
-                    "não reconhecidos como data, mantidos sem alteração:"
-                )
-                _print_examples(
-                    column_report["unrecognized_examples"],
-                    column_report["unrecognized_distinct"],
-                    redact_values,
-                )
-    elif operation == "fix_types":
-        if not report["columns"]:
-            print("Nenhuma coluna numérica armazenada como texto encontrada")
-        for column_report in report["columns"]:
-            column = column_report["column"]
-            type_name = column_report["type"]
-            if column_report["failed_count"]:
-                print(
-                    f'"{column}": convertida para {type_name}, '
-                    f"{format_int_ptbr(column_report['failed_count'])} valores não "
-                    "convertidos (viraram nulo):"
-                )
-                _print_examples(
-                    column_report["failed_examples"],
-                    column_report["failed_distinct"],
-                    redact_values,
-                )
-            else:
-                print(f'"{column}": convertida para {type_name}')
-    elif operation == "fill_null":
-        print(f"{format_int_ptbr(report['cells_filled'])} células preenchidas")
-    elif operation in ("drop_null", "remove_duplicates"):
-        print(f"{format_int_ptbr(report['rows_removed'])} linhas removidas")
+def _print_examples(examples, distinct_count, redact_values=False):
+    if redact_values:
+        print("  (valores ocultos por --redact-values)")
+        return
+    for value in examples:
+        print(f'  "{value}"')
+    if distinct_count > len(examples):
+        print(f"  ... e mais {distinct_count - len(examples)} valores")
 
 
-def _log_report(report):
-    # Só metadados: os exemplos de valores (unrecognized/failed_examples) ficam fora.
-    operation = report["operation"]
-    flag = "--" + operation.replace("_", "-")
-    if operation == "remove_columns":
-        log.info(
-            "%s: %s colunas removidas (%s)",
-            flag,
-            len(report["columns"]),
-            ", ".join(report["columns"]),
+def _print_nothing(report, redact_values):
+    pass
+
+
+def _print_remove_columns(report, redact_values):
+    print(f"{format_int_ptbr(len(report['columns']))} colunas removidas")
+
+
+def _print_rename_columns(report, redact_values):
+    print(f"{format_int_ptbr(len(report['mapping']))} colunas renomeadas")
+
+
+def _print_normalize_documents(report, redact_values):
+    if not report["columns"]:
+        print("Nenhuma coluna de documento encontrada")
+    for column_report in report["columns"]:
+        column = column_report["column"]
+        print(
+            f'"{column}": {format_int_ptbr(column_report["normalized"])} '
+            "documentos normalizados"
         )
-    elif operation == "rename_columns":
-        log.info(
-            "%s: %s colunas renomeadas (%s)",
-            flag,
-            len(report["mapping"]),
-            ", ".join(f"{old} → {new}" for old, new in report["mapping"].items()),
+        if column_report["still_invalid_count"]:
+            print(
+                f'"{column}": '
+                f"{format_int_ptbr(column_report['still_invalid_count'])} com "
+                "dígito verificador inválido (formatados, mas continuam "
+                "inválidos)"
+            )
+        if column_report["unrecognized_count"]:
+            print(
+                f'"{column}": '
+                f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
+                "fora do formato de CPF/CNPJ, mantidos sem alteração:"
+            )
+            _print_examples(
+                column_report["unrecognized_examples"],
+                column_report["unrecognized_distinct"],
+                redact_values,
+            )
+
+
+def _print_normalize_dates(report, redact_values):
+    if not report["columns"]:
+        print("Nenhuma coluna de data encontrada")
+    for column_report in report["columns"]:
+        column = column_report["column"]
+        print(
+            f'"{column}": {format_int_ptbr(column_report["normalized"])} '
+            "datas normalizadas"
         )
-    elif operation in ("normalize_documents", "normalize_dates", "fix_types"):
-        if not report["columns"]:
-            log.info("%s: nenhuma coluna encontrada", flag)
-        for column_report in report["columns"]:
-            column = column_report["column"]
-            if operation == "normalize_documents":
-                log.info(
-                    '%s: "%s" %s documentos normalizados',
-                    flag,
-                    column,
-                    column_report["normalized"],
-                )
-                if column_report["still_invalid_count"]:
-                    log.warning(
-                        '%s: "%s" %s continuam com dígito verificador inválido',
-                        flag,
-                        column,
-                        column_report["still_invalid_count"],
-                    )
-                failed_count = column_report["unrecognized_count"]
-                failed_message = "valores fora do formato de CPF/CNPJ"
-            elif operation == "normalize_dates":
-                log.info(
-                    '%s: "%s" %s datas normalizadas',
-                    flag,
-                    column,
-                    column_report["normalized"],
-                )
-                failed_count = column_report["unrecognized_count"]
-                failed_message = "valores não reconhecidos como data"
-            else:
-                log.info(
-                    '%s: "%s" convertida para %s', flag, column, column_report["type"]
-                )
-                failed_count = column_report["failed_count"]
-                failed_message = "valores não convertidos (viraram nulo)"
-            if failed_count:
-                log.warning(
-                    '%s: "%s" %s %s', flag, column, failed_count, failed_message
-                )
-    elif operation == "fill_null":
-        log.info("%s: %s células preenchidas", flag, report["cells_filled"])
-    elif operation in ("drop_null", "remove_duplicates"):
-        log.info("%s: %s linhas removidas", flag, report["rows_removed"])
-    else:
-        log.info("%s aplicado", flag)
+        if column_report["unrecognized_count"]:
+            print(
+                f'"{column}": '
+                f"{format_int_ptbr(column_report['unrecognized_count'])} valores "
+                "não reconhecidos como data, mantidos sem alteração:"
+            )
+            _print_examples(
+                column_report["unrecognized_examples"],
+                column_report["unrecognized_distinct"],
+                redact_values,
+            )
 
 
-_EXAMPLE_FIELD_BY_OPERATION = {
-    "normalize_documents": "unrecognized_examples",
-    "normalize_dates": "unrecognized_examples",
-    "fix_types": "failed_examples",
+def _print_fix_types(report, redact_values):
+    if not report["columns"]:
+        print("Nenhuma coluna numérica armazenada como texto encontrada")
+    for column_report in report["columns"]:
+        column = column_report["column"]
+        type_name = column_report["type"]
+        if column_report["failed_count"]:
+            print(
+                f'"{column}": convertida para {type_name}, '
+                f"{format_int_ptbr(column_report['failed_count'])} valores não "
+                "convertidos (viraram nulo):"
+            )
+            _print_examples(
+                column_report["failed_examples"],
+                column_report["failed_distinct"],
+                redact_values,
+            )
+        else:
+            print(f'"{column}": convertida para {type_name}')
+
+
+def _print_fill_null(report, redact_values):
+    print(f"{format_int_ptbr(report['cells_filled'])} células preenchidas")
+
+
+def _print_rows_removed(report, redact_values):
+    print(f"{format_int_ptbr(report['rows_removed'])} linhas removidas")
+
+
+# O log só leva metadados: os exemplos de valores (unrecognized/failed_examples)
+# ficam fora.
+def _log_applied(flag, report):
+    log.info("%s aplicado", flag)
+
+
+def _log_remove_columns(flag, report):
+    log.info(
+        "%s: %s colunas removidas (%s)",
+        flag,
+        len(report["columns"]),
+        ", ".join(report["columns"]),
+    )
+
+
+def _log_rename_columns(flag, report):
+    log.info(
+        "%s: %s colunas renomeadas (%s)",
+        flag,
+        len(report["mapping"]),
+        ", ".join(f"{old} → {new}" for old, new in report["mapping"].items()),
+    )
+
+
+def _log_failed(flag, column, failed_count, failed_message):
+    if failed_count:
+        log.warning('%s: "%s" %s %s', flag, column, failed_count, failed_message)
+
+
+def _log_normalize_documents(flag, report):
+    if not report["columns"]:
+        log.info("%s: nenhuma coluna encontrada", flag)
+    for column_report in report["columns"]:
+        column = column_report["column"]
+        log.info(
+            '%s: "%s" %s documentos normalizados',
+            flag,
+            column,
+            column_report["normalized"],
+        )
+        if column_report["still_invalid_count"]:
+            log.warning(
+                '%s: "%s" %s continuam com dígito verificador inválido',
+                flag,
+                column,
+                column_report["still_invalid_count"],
+            )
+        _log_failed(
+            flag,
+            column,
+            column_report["unrecognized_count"],
+            "valores fora do formato de CPF/CNPJ",
+        )
+
+
+def _log_normalize_dates(flag, report):
+    if not report["columns"]:
+        log.info("%s: nenhuma coluna encontrada", flag)
+    for column_report in report["columns"]:
+        column = column_report["column"]
+        log.info(
+            '%s: "%s" %s datas normalizadas', flag, column, column_report["normalized"]
+        )
+        _log_failed(
+            flag,
+            column,
+            column_report["unrecognized_count"],
+            "valores não reconhecidos como data",
+        )
+
+
+def _log_fix_types(flag, report):
+    if not report["columns"]:
+        log.info("%s: nenhuma coluna encontrada", flag)
+    for column_report in report["columns"]:
+        column = column_report["column"]
+        log.info('%s: "%s" convertida para %s', flag, column, column_report["type"])
+        _log_failed(
+            flag,
+            column,
+            column_report["failed_count"],
+            "valores não convertidos (viraram nulo)",
+        )
+
+
+def _log_fill_null(flag, report):
+    log.info("%s: %s células preenchidas", flag, report["cells_filled"])
+
+
+def _log_rows_removed(flag, report):
+    log.info("%s: %s linhas removidas", flag, report["rows_removed"])
+
+
+# ----------------------------------------------------------------
+# Registro de operações: incluir uma operação nova é acrescentar uma entrada
+# aqui e um campo de mesmo nome em `CleanOptions` (e a flag no CLI/MCP).
+# `examples_field` é o campo com valores de célula, esvaziado por
+# --redact-values no JSON.
+# ----------------------------------------------------------------
+_Operation = namedtuple(
+    "_Operation",
+    ["name", "apply", "print_text", "log", "examples_field"],
+    defaults=(None,),
+)
+
+# Remoção/renomeação vêm primeiro: as demais opções (--key,
+# --drop-null-columns, --document-columns, --date-columns, --fill-null
+# coluna:valor) usam os nomes resultantes. O --key é validado entre as fases.
+_COLUMN_OPERATIONS = (
+    _Operation(
+        "remove_columns",
+        _apply_remove_columns,
+        _print_remove_columns,
+        _log_remove_columns,
+    ),
+    _Operation(
+        "rename_columns",
+        _apply_rename_columns,
+        _print_rename_columns,
+        _log_rename_columns,
+    ),
+)
+_VALUE_OPERATIONS = (
+    _Operation("trim", _string_operator("strip_chars"), _print_nothing, _log_applied),
+    _Operation(
+        "lowercase", _string_operator("to_lowercase"), _print_nothing, _log_applied
+    ),
+    _Operation(
+        "uppercase", _string_operator("to_uppercase"), _print_nothing, _log_applied
+    ),
+    _Operation(
+        "normalize_case",
+        _string_operator("to_titlecase"),
+        _print_nothing,
+        _log_applied,
+    ),
+    _Operation(
+        "normalize_documents",
+        _apply_normalize_documents,
+        _print_normalize_documents,
+        _log_normalize_documents,
+        "unrecognized_examples",
+    ),
+    _Operation(
+        "normalize_dates",
+        _apply_normalize_dates,
+        _print_normalize_dates,
+        _log_normalize_dates,
+        "unrecognized_examples",
+    ),
+    _Operation(
+        "fix_types",
+        _apply_fix_types,
+        _print_fix_types,
+        _log_fix_types,
+        "failed_examples",
+    ),
+    _Operation("fill_null", _apply_fill_null, _print_fill_null, _log_fill_null),
+    _Operation("drop_null", _apply_drop_null, _print_rows_removed, _log_rows_removed),
+    _Operation(
+        "remove_duplicates",
+        _apply_remove_duplicates,
+        _print_rows_removed,
+        _log_rows_removed,
+    ),
+)
+_OPERATION_PHASES = (_COLUMN_OPERATIONS, _VALUE_OPERATIONS)
+_OPERATIONS_BY_NAME = {
+    operation.name: operation
+    for operations in _OPERATION_PHASES
+    for operation in operations
 }
+
+
+def _run_phase(df, options, operations, reports):
+    for operation in operations:
+        if not getattr(options, operation.name):
+            continue
+        df, fields = operation.apply(df, options)
+        report = {"operation": operation.name, **fields}
+        operation.log("--" + operation.name.replace("_", "-"), report)
+        reports.append(report)
+    return df
 
 
 def _redact_report(report):
     """Cópia do relatório de uma operação sem os exemplos de valor, para o
     JSON com --redact-values. As contagens (`*_count`/`*_distinct`) continuam.
     """
-    field = _EXAMPLE_FIELD_BY_OPERATION.get(report["operation"])
+    field = _OPERATIONS_BY_NAME[report["operation"]].examples_field
     if not field:
         return report
     return {
@@ -670,238 +754,104 @@ def _redact_report(report):
     }
 
 
-def _record(reports, report, output_format, redact_values):
-    reports.append(report)
-    _log_report(report)
-    if output_format == OutputFormat.TEXT:
-        _print_report(report, redact_values)
-
-
-def _write_output(df, output, output_type, output_format):
-    output_dir = os.path.dirname(output) or "."
-    if not os.access(output_dir, os.W_OK):
-        return fail(
-            output_format, "clean", f"The output path {output} cannot be written.", 3
-        )
-
-    try:
-        save_file(df, output_type, output)
-    except Exception as error:
-        return fail(
-            output_format,
-            "clean",
-            f"Could not save file {output} as {output_type}: {error}",
-            1,
-        )
-
-    return 0, None
-
-
-def clean(
-    filename,
-    trim=False,
-    lowercase=False,
-    uppercase=False,
-    normalize_case=False,
-    remove_duplicates=False,
-    key=None,
-    fill_null=None,
-    drop_null=False,
-    columns=None,
-    normalize_documents=None,
-    document_columns=None,
-    normalize_dates=False,
-    date_columns=None,
-    fix_types=False,
-    decimal_separator=None,
-    rename_columns=None,
-    remove_columns=None,
-    output=None,
-    output_format=OutputFormat.TEXT,
-    sep=None,
-    encoding=None,
-    redact_values=False,
-):
-    is_json = output_format == OutputFormat.JSON
-    has_operations = any(
-        (
-            trim,
-            lowercase,
-            uppercase,
-            normalize_case,
-            remove_duplicates,
-            fill_null,
-            drop_null,
-            normalize_documents,
-            normalize_dates,
-            fix_types,
-            rename_columns,
-            remove_columns,
-        )
+# ----------------------------------------------------------------
+# Comando
+# ----------------------------------------------------------------
+def diagnose(filename, sep=None, encoding=None):
+    """Diagnóstico sem alterar o arquivo (`clean` sem operações)."""
+    loaded = load_input(filename, sep, encoding)
+    findings = analyze_clean(loaded.df)
+    log.info(
+        "diagnóstico — %s problemas (%s)",
+        len(findings),
+        ", ".join(sorted({finding.category for finding in findings})) or "nenhum",
     )
+    return CleanDiagnosis(loaded, findings)
 
-    # No JSON, o stdout é só o relatório: o DataFrame precisa ir para um arquivo.
-    if is_json and has_operations and output is None:
-        return fail(output_format, "clean", "--format json requires --output", 2)
 
-    # Verificar a existência e a validade do arquivo de entrada
-    if not os.path.exists(filename):
-        return fail(
-            output_format, "clean", f"The file provided {filename} does not exist.", 2
-        )
-    if not os.path.isfile(filename):
-        return fail(
-            output_format,
-            "clean",
-            f"The file provided {filename} is not a valid file.",
+def apply_operations(filename, options, output=None, sep=None, encoding=None):
+    """Aplica as operações de `options` e grava em `output`, se informado.
+
+    Levanta `CommandError` em entrada, opção ou saída inválida — antes de gravar
+    qualquer coisa.
+    """
+    if sum((options.lowercase, options.uppercase, options.normalize_case)) > 1:
+        raise CommandError(
+            "--lowercase, --uppercase and --normalize-case are mutually exclusive",
             2,
         )
 
-    file_type = infer_file_type(filename)
-    if file_type is None:
-        return fail(
-            output_format,
-            "clean",
-            f"Could not infer the format of {filename} from its extension. "
-            "Use --from-type to specify it explicitly.",
-            2,
-        )
-
-    options_error = csv_options_error(file_type, sep, encoding)
-    if options_error:
-        return fail(output_format, "clean", options_error, 2)
-
-    try:
-        df = read_file(file_type, filename, sep, encoding)
-    except Exception as error:
-        return fail(
-            output_format,
-            "clean",
-            f"Could not load file {filename} as {file_type}: {error}",
-            1,
-        )
-
-    input_summary = file_summary(filename, file_type, df)
-
-    if not has_operations:
-        findings = analyze_clean(df)
-        log.info(
-            "diagnóstico — %s problemas (%s)",
-            len(findings),
-            ", ".join(sorted({finding.category for finding in findings})) or "nenhum",
-        )
-        if is_json:
-            document = build_document(
-                "clean",
-                status="ok",
-                file=input_summary,
-                problems=[
-                    finding_to_dict(finding, redact_values) for finding in findings
-                ],
-            )
-            print_document(document)
-            return 0, document
-        _print_diagnostics(filename, df, findings, redact_values)
-        return 0, None
+    loaded = load_input(filename, sep, encoding)
 
     reports = []
-    try:
-        # Remoção/renomeação vêm primeiro: as demais opções (--key, --columns,
-        # --document-columns, --date-columns, --fill-null coluna:valor) usam os
-        # nomes resultantes.
-        if remove_columns:
-            df, report = _apply_remove_columns(df, remove_columns)
-            _record(reports, report, output_format, redact_values)
+    df = _run_phase(loaded.df, options, _COLUMN_OPERATIONS, reports)
+    if options.key:
+        resolve_columns(df, options.key, "--key")
+    df = _run_phase(df, options, _VALUE_OPERATIONS, reports)
 
-        if rename_columns:
-            df, report = _apply_rename_columns(df, rename_columns)
-            _record(reports, report, output_format, redact_values)
+    output_type = None
+    if output is not None:
+        output_type = output_file_type(output)
+        write_output(df, output, output_type)
+    return CleanResult(loaded, df, reports, output, output_type)
 
-        key_columns = [column.strip() for column in key.split(",")] if key else None
-        if key_columns:
-            unknown_columns = [
-                column for column in key_columns if column not in df.columns
-            ]
-            if unknown_columns:
-                raise CleanError(
-                    f"Unknown column(s) in --key: {', '.join(unknown_columns)}", 2
-                )
 
-        df = _apply_string_operators(df, trim, lowercase, uppercase, normalize_case)
-        for operation, enabled in (
-            ("trim", trim),
-            ("lowercase", lowercase),
-            ("uppercase", uppercase),
-            ("normalize_case", normalize_case),
-        ):
-            if enabled:
-                _record(reports, {"operation": operation}, output_format, redact_values)
-
-        if normalize_documents:
-            df, report = _apply_normalize_documents(
-                df, normalize_documents, document_columns
-            )
-            _record(reports, report, output_format, redact_values)
-
-        if normalize_dates:
-            df, report = _apply_normalize_dates(df, date_columns)
-            _record(reports, report, output_format, redact_values)
-
-        if fix_types:
-            df, report = _apply_fix_types(df, decimal_separator)
-            _record(reports, report, output_format, redact_values)
-
-        if fill_null:
-            df, report = _apply_fill_null(df, fill_null)
-            _record(reports, report, output_format, redact_values)
-
-        if drop_null:
-            df, report = _apply_drop_null(df, columns)
-            _record(reports, report, output_format, redact_values)
-
-        if remove_duplicates:
-            df, report = _apply_remove_duplicates(df, key_columns)
-            _record(reports, report, output_format, redact_values)
-    except CleanError as error:
-        return fail(output_format, "clean", error.message, error.code)
-
-    if output is None:
-        print(df)
-        return 0, None
-
-    output_type = infer_file_type(output)
-    if output_type is None:
-        return fail(
-            output_format,
-            "clean",
-            f"Could not infer the format of {output} from its extension. "
-            "Use a known extension (csv, json, parquet, ...).",
-            2,
-        )
-
-    write_exit_code, write_document = _write_output(
-        df, output, output_type, output_format
+def diagnosis_document(result, redact_values=False):
+    return build_document(
+        "clean",
+        status="ok",
+        file=result.input.summary,
+        problems=[
+            finding_to_dict(finding, redact_values) for finding in result.findings
+        ],
     )
-    if write_exit_code:
-        return write_exit_code, write_document
 
-    if is_json:
-        if redact_values:
-            operations = [_redact_report(report) for report in reports]
-        else:
-            operations = reports
-        document = build_document(
-            "clean",
-            status="ok",
-            file=input_summary,
-            operations=operations,
-            output={
-                "path": output,
-                "format": output_type.value,
-                "rows": df.height,
-                "columns": df.width,
-            },
-        )
-        print_document(document)
-        return 0, document
-    return 0, None
+
+def print_diagnosis(result, redact_values=False):
+    filename, df = result.input.filename, result.input.df
+    print(f"Arquivo: {filename}")
+    print(f"Linhas: {format_int_ptbr(df.height)}")
+    print(f"Colunas: {format_int_ptbr(df.width)}")
+    print()
+
+    if not result.findings:
+        print("Nenhum problema encontrado.")
+        return
+
+    findings_by_column = {}
+    for finding in result.findings:
+        message = display_message(finding, redact_values)
+        findings_by_column.setdefault(finding.column, []).append(message)
+
+    for column in df.columns:
+        if column not in findings_by_column:
+            continue
+        print(column)
+        for message in findings_by_column[column]:
+            print(f"  {message}")
+        print()
+
+
+def result_document(result, redact_values=False):
+    reports = result.reports
+    if redact_values:
+        reports = [_redact_report(report) for report in reports]
+    return build_document(
+        "clean",
+        status="ok",
+        file=result.input.summary,
+        operations=reports,
+        output={
+            "path": result.output,
+            "format": result.output_type.value,
+            "rows": result.df.height,
+            "columns": result.df.width,
+        },
+    )
+
+
+def print_result(result, redact_values=False):
+    for report in result.reports:
+        _OPERATIONS_BY_NAME[report["operation"]].print_text(report, redact_values)
+    if result.output is None:
+        print(result.df)

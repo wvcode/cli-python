@@ -4,14 +4,23 @@ import json
 import math
 import os
 
-try:
-    from execution_log import log
-    from structures import OutputFormat
-except ImportError:
-    from .execution_log import log
-    from .structures import OutputFormat
+from .execution_log import log
+from .structures import OutputFormat
 
 SCHEMA_VERSION = 1
+
+
+class CommandError(Exception):
+    """Falha esperada de um comando (arquivo inexistente, opção inválida, ...).
+
+    `exit_code` é o código que o CLI devolve e que vai no documento de erro
+    (`error.exit_code`) tanto no `--format json` quanto no servidor MCP.
+    """
+
+    def __init__(self, message, exit_code):
+        super().__init__(message)
+        self.message = message
+        self.exit_code = exit_code
 
 
 def _sanitize(value):
@@ -56,20 +65,19 @@ def build_error(command, message, exit_code):
     )
 
 
-def fail(output_format, command, message, exit_code):
-    """Reporta um erro no formato certo e devolve `(exit_code, document)`.
+def error_document(command, error):
+    """Registra um `CommandError` no log e devolve o documento de erro."""
+    log.error(error.message)
+    return build_error(command, error.message, error.exit_code)
 
-    `document` é o dict do erro em modo JSON, `None` em modo texto — mesma
-    convenção de `info()`/`profile()`/`clean()`/`convert()`.
-    """
-    log.error(message)
-    document = None
+
+def fail(output_format, command, error):
+    """Reporta um `CommandError` no stdout do CLI, em texto ou JSON."""
+    document = error_document(command, error)
     if output_format == OutputFormat.JSON:
-        document = build_error(command, message, exit_code)
         print_document(document)
     else:
-        print(message)
-    return exit_code, document
+        print(error.message)
 
 
 def file_summary(filename, file_type, df):

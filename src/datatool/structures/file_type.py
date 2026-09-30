@@ -31,6 +31,8 @@ EXTENSION_TO_FILE_TYPE = {
     "sqlite3": FileType.SQLITE,
 }
 
+SUPPORTED_EXTENSIONS = ", ".join(EXTENSION_TO_FILE_TYPE)
+
 
 def infer_file_type(filename: str) -> Optional[FileType]:
     extension = os.path.splitext(filename)[1].lstrip(".").lower()

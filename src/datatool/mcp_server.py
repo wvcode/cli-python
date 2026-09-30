@@ -3,45 +3,39 @@
 """Servidor MCP sobre o CLI (spec 020).
 
 Camada fina: cada ferramenta `datatool_*` valida o caminho de arquivo contra o
-sandbox (`--root`), chama a função Python do comando equivalente com
-`output_format=OutputFormat.JSON` e devolve o mesmo documento de 019 como
+sandbox (`--root`), chama a função Python do comando equivalente e devolve o
+mesmo documento de 019 que o `--format json` do CLI imprime, como
 `structured_content`. Nenhuma lógica de negócio mora aqui.
 """
 
 import argparse
-import contextlib
-import io
 import os
+import sys
 from pathlib import Path
 from typing import List, Optional
 
-from mcp.server.mcpserver import MCPServer
-from mcp.types import CallToolResult, TextContent, ToolAnnotations
-
 try:
-    from clean import clean as run_clean
-    from convert import convert as run_convert
-    from execution_log import logged
-    from info import info as run_info
-    from profiler import profile as run_profile
-    from reporting import build_error
-    from structures import FileType, OutputFormat
-except ImportError:
-    from .clean import clean as run_clean
-    from .convert import convert as run_convert
-    from .execution_log import logged
-    from .info import info as run_info
-    from .profiler import profile as run_profile
-    from .reporting import build_error
-    from .structures import FileType, OutputFormat
+    from mcp.server.mcpserver import MCPServer
+    from mcp.types import CallToolResult, TextContent, ToolAnnotations
+except ModuleNotFoundError as error:
+    # `mcp` é um extra opcional: sem ele, `main()` só explica como instalar.
+    if error.name != "mcp":
+        raise
+    MCPServer = None
+
+from . import clean as clean_command
+from . import convert as convert_command
+from . import info as info_command
+from . import profiler as profile_command
+from .execution_log import logged
+from .reporting import CommandError, build_error, error_document
+from .structures import FileType
 
 DEFAULT_MAX_COLUMNS = 50
 
-_READ_ONLY = ToolAnnotations(
-    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
-)
-_DESTRUCTIVE = ToolAnnotations(
-    readOnlyHint=False, destructiveHint=True, openWorldHint=False
+MISSING_MCP_MESSAGE = (
+    "datatool-mcp requires the optional 'mcp' dependency. "
+    "Install it with: pip install 'datatool-cli[mcp]'"
 )
 
 
@@ -86,14 +80,6 @@ def _parse_file_type(value, option_name):
         raise SandboxError(f"Invalid {option_name}: {value}. Use one of: {allowed}")
 
 
-def _run_quietly(fn, **kwargs):
-    # info()/profile()/clean()/convert() ainda imprimem no stdout (é o que o
-    # CLI usa) — aqui isso corromperia o protocolo MCP por stdio, então é
-    # abafado. O documento devolvido já traz tudo que a ferramenta precisa.
-    with contextlib.redirect_stdout(io.StringIO()):
-        return fn(**kwargs)
-
-
 def _summarize(document):
     command = document.get("command")
     if "problems" in document:
@@ -115,25 +101,29 @@ def _summarize(document):
     return "OK."
 
 
-def _tool_result(exit_code, document):
-    is_error = exit_code != 0
-    if is_error:
-        text = document["error"]["message"] if document else "Unknown error"
-    else:
-        text = _summarize(document) if document else "OK."
+def _error_result(document):
     return CallToolResult(
-        content=[TextContent(type="text", text=text)],
+        content=[TextContent(type="text", text=document["error"]["message"])],
         structured_content=document,
-        is_error=is_error,
+        is_error=True,
     )
 
 
 def _sandbox_error_result(command, error):
-    document = build_error(command, str(error), 2)
+    return _error_result(build_error(command, str(error), 2))
+
+
+def _run_tool(command, run, to_document):
+    try:
+        result = run()
+    except CommandError as error:
+        return _error_result(error_document(command, error))
+
+    document = to_document(result)
     return CallToolResult(
-        content=[TextContent(type="text", text=str(error))],
+        content=[TextContent(type="text", text=_summarize(document))],
         structured_content=document,
-        is_error=True,
+        is_error=False,
     )
 
 
@@ -142,10 +132,19 @@ def build_server(root):
     quanto pelos testes (sem precisar de um processo/stdio de verdade)."""
     root = Path(root).resolve()
     server = MCPServer("datatool_mcp")
+    read_only = ToolAnnotations(
+        readOnlyHint=True,
+        destructiveHint=False,
+        idempotentHint=True,
+        openWorldHint=False,
+    )
+    destructive = ToolAnnotations(
+        readOnlyHint=False, destructiveHint=True, openWorldHint=False
+    )
 
     @server.tool(
         name="datatool_info",
-        annotations=_READ_ONLY,
+        annotations=read_only,
         description=(
             "Diagnostica um dataset (CSV/JSON/Excel/Parquet): valores nulos, "
             "linhas duplicadas, colunas com formatos de data misturados, "
@@ -165,19 +164,15 @@ def build_server(root):
         except SandboxError as error:
             return _sandbox_error_result("info", error)
 
-        exit_code, document = _run_quietly(
-            run_info,
-            filename=resolved,
-            output_format=OutputFormat.JSON,
-            sep=sep,
-            encoding=encoding,
-            redact_values=redact_values,
+        return _run_tool(
+            "info",
+            lambda: info_command.diagnose(resolved, sep=sep, encoding=encoding),
+            lambda result: info_command.to_document(result, redact_values),
         )
-        return _tool_result(exit_code, document)
 
     @server.tool(
         name="datatool_profile",
-        annotations=_READ_ONLY,
+        annotations=read_only,
         description=(
             "Profiling estatístico de um dataset: para colunas numéricas, "
             "min/max/média/mediana/percentis/outliers; para colunas "
@@ -201,22 +196,22 @@ def build_server(root):
         except SandboxError as error:
             return _sandbox_error_result("profile", error)
 
-        exit_code, document = _run_quietly(
-            run_profile,
-            filename=resolved,
-            key=key,
-            output_format=OutputFormat.JSON,
-            sep=sep,
-            encoding=encoding,
-            columns=columns,
-            max_columns=max_columns,
-            redact_values=redact_values,
+        return _run_tool(
+            "profile",
+            lambda: profile_command.run(
+                resolved,
+                key=key,
+                sep=sep,
+                encoding=encoding,
+                columns=columns,
+                max_columns=max_columns,
+            ),
+            lambda result: profile_command.to_document(result, redact_values),
         )
-        return _tool_result(exit_code, document)
 
     @server.tool(
         name="datatool_clean_diagnose",
-        annotations=_READ_ONLY,
+        annotations=read_only,
         description=(
             "Diagnostica problemas de qualidade de um dataset sem alterá-lo: "
             "e-mail inválido, variação de formato de telefone, espaços "
@@ -237,19 +232,15 @@ def build_server(root):
         except SandboxError as error:
             return _sandbox_error_result("clean", error)
 
-        exit_code, document = _run_quietly(
-            run_clean,
-            filename=resolved,
-            output_format=OutputFormat.JSON,
-            sep=sep,
-            encoding=encoding,
-            redact_values=redact_values,
+        return _run_tool(
+            "clean",
+            lambda: clean_command.diagnose(resolved, sep=sep, encoding=encoding),
+            lambda result: clean_command.diagnosis_document(result, redact_values),
         )
-        return _tool_result(exit_code, document)
 
     @server.tool(
         name="datatool_clean_apply",
-        annotations=_DESTRUCTIVE,
+        annotations=destructive,
         description=(
             "Aplica operações de limpeza a um dataset e grava o resultado em "
             "`output` (obrigatório, precisa ser diferente de `filename`): "
@@ -288,23 +279,26 @@ def build_server(root):
         encoding: Optional[str] = None,
         redact_values: bool = True,
     ) -> CallToolResult:
-        has_operation = any(
-            (
-                trim,
-                lowercase,
-                uppercase,
-                normalize_case,
-                remove_duplicates,
-                fill_null,
-                drop_null,
-                normalize_documents,
-                normalize_dates,
-                fix_types,
-                rename_columns,
-                remove_columns,
-            )
+        options = clean_command.CleanOptions(
+            trim=trim,
+            lowercase=lowercase,
+            uppercase=uppercase,
+            normalize_case=normalize_case,
+            remove_duplicates=remove_duplicates,
+            key=key,
+            fill_null=fill_null,
+            drop_null=drop_null,
+            drop_null_columns=columns,
+            normalize_documents=normalize_documents,
+            document_columns=document_columns,
+            normalize_dates=normalize_dates,
+            date_columns=date_columns,
+            fix_types=fix_types,
+            decimal_separator=decimal_separator,
+            rename_columns=rename_columns,
+            remove_columns=remove_columns,
         )
-        if not has_operation:
+        if not options.has_operations():
             return _sandbox_error_result(
                 "clean",
                 "No operation requested. Use datatool_clean_diagnose for a "
@@ -317,37 +311,21 @@ def build_server(root):
         except SandboxError as error:
             return _sandbox_error_result("clean", error)
 
-        exit_code, document = _run_quietly(
-            run_clean,
-            filename=resolved_input,
-            trim=trim,
-            lowercase=lowercase,
-            uppercase=uppercase,
-            normalize_case=normalize_case,
-            remove_duplicates=remove_duplicates,
-            key=key,
-            fill_null=fill_null,
-            drop_null=drop_null,
-            columns=columns,
-            normalize_documents=normalize_documents,
-            document_columns=document_columns,
-            normalize_dates=normalize_dates,
-            date_columns=date_columns,
-            fix_types=fix_types,
-            decimal_separator=decimal_separator,
-            rename_columns=rename_columns,
-            remove_columns=remove_columns,
-            output=resolved_output,
-            output_format=OutputFormat.JSON,
-            sep=sep,
-            encoding=encoding,
-            redact_values=redact_values,
+        return _run_tool(
+            "clean",
+            lambda: clean_command.apply_operations(
+                resolved_input,
+                options,
+                output=resolved_output,
+                sep=sep,
+                encoding=encoding,
+            ),
+            lambda result: clean_command.result_document(result, redact_values),
         )
-        return _tool_result(exit_code, document)
 
     @server.tool(
         name="datatool_convert",
-        annotations=_DESTRUCTIVE,
+        annotations=destructive,
         description=(
             "Converte um arquivo entre formatos (CSV, JSON, JSONL, Excel, "
             "Parquet, Feather, Avro, SQLite), inferindo o formato pela "
@@ -375,17 +353,18 @@ def build_server(root):
         except SandboxError as error:
             return _sandbox_error_result("convert", error)
 
-        exit_code, document = _run_quietly(
-            run_convert,
-            filename=resolved_input,
-            from_type=parsed_from_type,
-            to_type=parsed_to_type,
-            to_filename=resolved_output,
-            show_stats=False,
-            sep=sep,
-            encoding=encoding,
+        return _run_tool(
+            "convert",
+            lambda: convert_command.convert(
+                resolved_input,
+                to_filename=resolved_output,
+                from_type=parsed_from_type,
+                to_type=parsed_to_type,
+                sep=sep,
+                encoding=encoding,
+            ),
+            convert_command.to_document,
         )
-        return _tool_result(exit_code, document)
 
     return server
 
@@ -398,6 +377,8 @@ def main():
         help="Diretório raiz do sandbox de arquivos (padrão: diretório atual)",
     )
     args = parser.parse_args()
+    if MCPServer is None:
+        sys.exit(MISSING_MCP_MESSAGE)
     root = Path(args.root).resolve()
     server = build_server(root)
     # O log de execução (spec 017) é relativo ao diretório de trabalho do
