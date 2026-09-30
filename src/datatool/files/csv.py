@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
+"""Leitura de CSV com detecção de delimitador e encoding (spec 017)."""
+
 import codecs
 import csv
 
 import polars as pl
 
 from ..execution_log import log
-from .file_type import FileType
-from .sqlite import read_sqlite, write_sqlite
+from .types import FileType
 
 _CSV_DELIMITERS = ",;\t|"
 _SNIFF_BYTES = 64 * 1024
@@ -87,50 +87,3 @@ def read_csv(filename, sep=None, encoding=None):
     # em Python pelo próprio polars.
     polars_encoding = "utf8" if codecs.lookup(encoding).name == "utf-8" else encoding
     return pl.read_csv(filename, separator=separator, encoding=polars_encoding)
-
-
-read_function = {
-    FileType.CSV: read_csv,
-    FileType.FEATHER: pl.read_ipc,
-    FileType.JSON: pl.read_json,
-    FileType.JSONL: pl.read_ndjson,
-    FileType.XLSX: pl.read_excel,
-    FileType.PARQUET: pl.read_parquet,
-    FileType.AVRO: pl.read_avro,
-    FileType.SQLITE: read_sqlite,
-}
-
-
-def save_function(df, to_type, to_filename):
-    save_function = {
-        FileType.CSV: df.write_csv,
-        FileType.FEATHER: df.write_ipc,
-        FileType.JSON: df.write_json,
-        FileType.JSONL: df.write_ndjson,
-        FileType.XLSX: df.write_excel,
-        FileType.PARQUET: df.write_parquet,
-        FileType.AVRO: df.write_avro,
-        FileType.SQLITE: lambda filename: write_sqlite(df, filename),
-    }
-    save_function[to_type](to_filename)
-
-
-def read_file(file_type, filename, sep=None, encoding=None):
-    log.info("lendo %s (%s)", filename, file_type.value)
-    if file_type == FileType.CSV:
-        df = read_csv(filename, sep, encoding)
-    else:
-        df = read_function[file_type](filename)
-    log.info("lido — %s linhas, %s colunas", df.height, df.width)
-    return df
-
-
-def save_file(df, file_type, filename):
-    save_function(df, file_type, filename)
-    log.info(
-        "gravado %s (%s) — %s linhas, %s colunas",
-        filename,
-        file_type.value,
-        df.height,
-        df.width,
-    )

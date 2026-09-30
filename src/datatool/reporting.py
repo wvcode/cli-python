@@ -1,13 +1,16 @@
-# -*- coding: utf-8 -*-
-
 import json
 import math
 import os
+from enum import Enum
 
 from .execution_log import log
-from .structures import OutputFormat
 
 SCHEMA_VERSION = 1
+
+
+class OutputFormat(str, Enum):
+    TEXT = "text"
+    JSON = "json"
 
 
 class CommandError(Exception):

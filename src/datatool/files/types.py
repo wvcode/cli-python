@@ -1,8 +1,5 @@
-# -*- coding: utf-8 -*-
-
 import os
 from enum import Enum
-from typing import Optional
 
 
 class FileType(str, Enum):
@@ -34,6 +31,6 @@ EXTENSION_TO_FILE_TYPE = {
 SUPPORTED_EXTENSIONS = ", ".join(EXTENSION_TO_FILE_TYPE)
 
 
-def infer_file_type(filename: str) -> Optional[FileType]:
+def infer_file_type(filename: str) -> FileType | None:
     extension = os.path.splitext(filename)[1].lstrip(".").lower()
     return EXTENSION_TO_FILE_TYPE.get(extension)

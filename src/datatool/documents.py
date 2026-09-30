@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """CPF/CNPJ: reconhecimento de formato, dígito verificador e máscara (spec 018).
 
 Só lida com valores; decidir se uma coluna inteira é de documentos fica em
@@ -75,7 +73,9 @@ def _char_value(char):
 
 
 def _check_digit(chars, weights):
-    total = sum(_char_value(char) * weight for char, weight in zip(chars, weights))
+    total = sum(
+        _char_value(char) * weight for char, weight in zip(chars, weights, strict=True)
+    )
     remainder = total % 11
     return "0" if remainder < 2 else str(11 - remainder)
 

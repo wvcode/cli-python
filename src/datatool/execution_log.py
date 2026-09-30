@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import contextvars
 import functools
 import logging
@@ -11,10 +9,19 @@ from collections import namedtuple
 from enum import Enum
 from logging.handlers import RotatingFileHandler
 
+import platformdirs
 import typer
 
-LOG_DIR = "logs"
 LOG_FILE = "datatool.log"
+# Onde gravar: DATATOOL_LOG_DIR (relativo ao diretório atual, se não for
+# absoluto) > diretório padrão definido pelo processo (o servidor MCP usa
+# `<root>/logs`) > diretório de logs do usuário no sistema (ex.:
+# ~/Library/Logs/datatool, ~/.local/state/datatool/log). DATATOOL_NO_LOG=1
+# desliga o log.
+LOG_DIR_ENV = "DATATOOL_LOG_DIR"
+NO_LOG_ENV = "DATATOOL_NO_LOG"
+_TRUTHY = ("1", "true", "yes", "sim")
+_default_log_dir = None
 MAX_BYTES = 5 * 1024 * 1024
 BACKUP_COUNT = 3
 
@@ -27,7 +34,9 @@ log.addHandler(logging.NullHandler())
 # Execução corrente, por contexto (thread/tarefa): o servidor MCP roda
 # ferramentas em paralelo, cada uma numa thread, todas no mesmo logger.
 _Run = namedtuple("_Run", ["run_id", "command", "handler"])
-_current_run = contextvars.ContextVar("datatool_run", default=None)
+_current_run: contextvars.ContextVar["_Run | None"] = contextvars.ContextVar(
+    "datatool_run", default=None
+)
 
 # Um handler por arquivo de log, compartilhado pelas execuções simultâneas que
 # gravam nele: caminho absoluto → [handler, execuções usando].
@@ -51,8 +60,28 @@ class _RunFileHandler(RotatingFileHandler):
         return True
 
 
+def set_default_log_dir(path):
+    """Troca o diretório padrão do log (DATATOOL_LOG_DIR ainda tem prioridade)."""
+    global _default_log_dir
+    _default_log_dir = path
+
+
+def log_path():
+    """Caminho absoluto do arquivo de log, ou None se o log estiver desligado."""
+    if os.environ.get(NO_LOG_ENV, "").strip().lower() in _TRUTHY:
+        return None
+    log_dir = (
+        os.environ.get(LOG_DIR_ENV)
+        or _default_log_dir
+        or platformdirs.user_log_dir("datatool", appauthor=False)
+    )
+    return os.path.abspath(os.path.join(log_dir, LOG_FILE))
+
+
 def _acquire_handler():
-    path = os.path.abspath(os.path.join(LOG_DIR, LOG_FILE))
+    path = log_path()
+    if path is None:
+        return None
     with _handlers_lock:
         entry = _handlers.get(path)
         if entry is None:
@@ -98,7 +127,7 @@ def _format_args(kwargs):
     return ", ".join(parts)
 
 
-def logged(command, log_args=True):
+def logged(command):
     """Registra início, fim, exit code e duração de um comando do CLI."""
 
     def decorator(function):
@@ -109,7 +138,7 @@ def logged(command, log_args=True):
             started = time.monotonic()
             log.info(
                 "início — args: %s",
-                _format_args(kwargs) if log_args else "(omitidos)",
+                _format_args(kwargs),
             )
 
             exit_code = 0

@@ -18,13 +18,16 @@ jobs:
           python-version: "3.13"
 
       - name: Install dependencies
-        run: pip install -r requirements-dev.txt
+        run: pip install -e ".[dev]"
 
       - name: Ruff check
         run: ruff check src/ tests/
 
       - name: Ruff format check
         run: ruff format --check src/ tests/
+
+      - name: Pyright
+        run: pyright
 
   test:
     runs-on: ubuntu-latest
@@ -40,9 +43,28 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        run: pytest --cov --cov-report=term-missing
+
+  # Garante que os mínimos declarados em pyproject.toml funcionam de verdade:
+  # instala a versão mais baixa permitida de cada dependência direta.
+  test-minimum:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install minimum versions
         run: |
-          pip install -r requirements.txt -r requirements-dev.txt
-          pip install -e .
+          pip install uv
+          uv venv -p 3.10 .venv-min
+          VIRTUAL_ENV=.venv-min uv pip install --resolution lowest-direct -e ".[dev]"
 
       - name: Run tests
-        run: pytest tests/
+        run: .venv-min/bin/python -m pytest

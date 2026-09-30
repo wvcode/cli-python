@@ -6,7 +6,7 @@ Como analista de dados, eu quero gerar estatísticas completas de um dataset, pa
 ## Contexto
 Camada 2 da ideia ("Data profiling"), apontada como um dos principais diferenciais do produto.
 
-Implementado em [src/datatool/profiling.py](../src/datatool/profiling.py) (cálculo das estatísticas por coluna, sem I/O — reutilizável pela futura spec 004) e [src/datatool/profiler.py](../src/datatool/profiler.py) (leitura do arquivo e impressão no terminal). O módulo foi nomeado `profiler.py`, e não `profile.py`, para não colidir com o módulo `profile` da stdlib do Python. A contagem de duplicidade reaproveita `duplicate_row_count` de [src/datatool/quality.py](../src/datatool/quality.py) (mesma spec 002).
+Implementado em [src/datatool/column_stats.py](../src/datatool/column_stats.py) (era `profiling.py` até o débito técnico DT23) (cálculo das estatísticas por coluna, sem I/O — reutilizável pela futura spec 004) e [src/datatool/profiler.py](../src/datatool/profiler.py) (leitura do arquivo e impressão no terminal). O módulo foi nomeado `profiler.py`, e não `profile.py`, para não colidir com o módulo `profile` da stdlib do Python. A contagem de duplicidade reaproveita `duplicate_row_count` de [src/datatool/quality.py](../src/datatool/quality.py) (mesma spec 002).
 
 ## Interface proposta
 ```bash
@@ -49,7 +49,7 @@ datatool profile vendas.csv --max-columns 50
 Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestProfileColumnsFilter`). A saída padrão (sem `--columns`/`--max-columns`) foi comparada com a versão anterior à extensão e é idêntica.
 
 #### Nota de implementação
-- `profiling.py`'s `profile(df, key_columns=None, columns=None)` ganhou o parâmetro `columns`: quando informado, só essas colunas viram `ColumnProfile`; `rows`/`columns` (largura) e `duplicates_total` continuam calculados sobre `df` inteiro, não sobre a seleção.
+- `column_stats.py` (antigo `profiling.py`): `profile(df, key_columns=None, columns=None)` ganhou o parâmetro `columns`: quando informado, só essas colunas viram `ColumnProfile`; `rows`/`columns` (largura) e `duplicates_total` continuam calculados sobre `df` inteiro, não sobre a seleção.
 - A ordem final de colunas ignora a ordem digitada em `--columns` — [src/datatool/profiler.py](../src/datatool/profiler.py) filtra `df.columns` (que já está na ordem do dataset) pelo conjunto pedido, e só então aplica `--max-columns` cortando os N primeiros dessa lista. Isso é o que garante "ordem do dataset" mesmo com `--columns idade,nome` (nome vem antes de idade no dataset de exemplo).
 - `--max-columns` com valor menor que 1 é erro claro, exit code 2, por segurança (evita fatiar com índice negativo); a spec original não previa esse valor, mas o comportamento sem essa checagem seria confuso.
 - `columns_returned`/`columns_total`/`truncated_columns` só aparecem no JSON quando há truncamento de fato — sem `--max-columns`, ou com `--max-columns` maior que o total de colunas, o documento é idêntico ao de antes desta extensão.

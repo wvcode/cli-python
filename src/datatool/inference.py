@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Inferência do que uma coluna de texto contém: datas, números ou CPF/CNPJ.
 
 Fonte única para o diagnóstico (`quality`, usado por `info`/`clean`) e para a
@@ -132,12 +130,18 @@ def date_sample_shapes(sample):
     return matched
 
 
+def date_column_shapes(df):
+    """{coluna: formas de data da amostra}, só das colunas de datas."""
+    shapes_by_column = {}
+    for column in _text_columns(df):
+        shapes = date_sample_shapes(sample_values(df[column]))
+        if shapes is not None:
+            shapes_by_column[column] = shapes
+    return shapes_by_column
+
+
 def date_columns(df):
-    return [
-        column
-        for column in _text_columns(df)
-        if date_sample_shapes(sample_values(df[column])) is not None
-    ]
+    return list(date_column_shapes(df))
 
 
 # ----------------------------------------------------------------
@@ -176,14 +180,19 @@ def parse_number(value, decimal_separator):
     return float(value) if "." in value else int(value)
 
 
-def numeric_text_columns(df, decimal_separator=None):
+def numeric_text_columns(df, decimal_separator=None, dates=None, documents=None):
     """Colunas de texto que guardam números.
 
     Ficam de fora colunas de CPF/CNPJ e de datas ("20240115" é número, mas é
     uma data), e códigos com zero à esquerda ("01234": CEP, CPF, ...), que
-    perderiam os zeros se convertidos.
+    perderiam os zeros se convertidos. `dates`/`documents` recebem essas
+    colunas de quem já as calculou, para não classificar tudo de novo.
     """
-    skip = set(document_columns(df)) | set(date_columns(df))
+    if dates is None:
+        dates = date_columns(df)
+    if documents is None:
+        documents = document_columns(df)
+    skip = set(dates) | set(documents)
     columns = []
     for column in _text_columns(df):
         if column in skip:

@@ -6,7 +6,7 @@ O roadmap completo, com o status de cada funcionalidade, está em [specs/README.
 
 ## Status
 
-- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`/`convert`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução em `logs/datatool.log`, validação de CPF/CNPJ, servidor MCP (`datatool-mcp`) para agentes de IA
+- **Implementado**: `convert`, `info`, `profile` (+ `--columns`/`--max-columns`), `clean` (diagnóstico + `--trim`/`--lowercase`/`--uppercase`/`--normalize-case`/`--remove-duplicates`/`--fill-null`/`--drop-null`/`--normalize-dates`/`--fix-types`/`--rename-columns`/`--remove-columns`/`--normalize-documents`), saída em JSON (`--format json`) em `info`/`profile`/`clean`/`convert`, `--redact-values` em `info`/`profile`/`clean`, detecção de delimitador/encoding de CSV (`--sep`/`--encoding`), log de execução (no diretório de logs do usuário, configurável), validação de CPF/CNPJ, servidor MCP (`datatool-mcp`) para agentes de IA
 - **Ainda não implementado**: `dataset`, `excel`, relatório HTML de profiling, pipelines YAML, IA opcional, licenciamento Pro — veja [specs/README.md](specs/README.md) para o detalhamento spec a spec
 
 ## Requisitos
@@ -27,16 +27,18 @@ Isso registra o comando `datatool` no ambiente virtual (instalação editável: 
 pip install datatool-cli
 ```
 
+`datatool --version` mostra a versão instalada (gerada a partir da tag do git).
+
 Para apenas rodar via módulo, sem instalar:
 
 ```bash
 PYTHONPATH=src python -m datatool.main <comando> ...
 ```
 
-Para desenvolvimento (testes e lint):
+Para desenvolvimento (testes, cobertura, lint e checagem de tipos; já inclui o servidor MCP):
 
 ```bash
-pip install -r requirements-dev.txt
+pip install -e ".[dev]"
 ```
 
 Para o servidor MCP (usado por agentes de IA — ver [seção própria](#servidor-mcp-datatool-mcp)):
@@ -322,7 +324,7 @@ datatool convert vendas.csv vendas.parquet --sep "\t"
 
 ### Log de execução
 
-Toda execução registra em `logs/datatool.log` (no diretório onde o comando foi rodado) o que foi feito: comando e opções, delimitador/encoding usados, arquivos lidos e gravados, operações do `clean` com as contagens, erros, exit code e duração. O terminal não muda.
+Toda execução registra em `datatool.log`, no diretório de logs do usuário (`~/Library/Logs/datatool` no macOS, `~/.local/state/datatool/log` no Linux, `%LOCALAPPDATA%\datatool\Logs` no Windows), o que foi feito: comando e opções, delimitador/encoding usados, arquivos lidos e gravados, operações do `clean` com as contagens, erros, exit code e duração. O terminal não muda.
 
 ```text
 2026-09-25 15:40:46,811 INFO    [41227a] clean: início — args: filename=vendas.csv, fix_types=True, decimal_separator=,, output=limpo.csv, output_format=text
@@ -336,7 +338,8 @@ Toda execução registra em `logs/datatool.log` (no diretório onde o comando fo
 - O log nunca contém valores das células (só caminhos, nomes de coluna, contagens e opções)
 - Rotação a cada 5 MB, mantendo até 3 arquivos antigos (`datatool.log.1` a `.3`)
 - Se o log não puder ser gravado (ex.: diretório somente leitura), o comando roda normalmente, sem log
-- `logs/` está no `.gitignore`
+- `DATATOOL_LOG_DIR=caminho` grava em outro diretório (relativo ao diretório atual, se não for absoluto; ex.: `DATATOOL_LOG_DIR=logs` volta ao comportamento antigo, em `./logs`)
+- `DATATOOL_NO_LOG=1` desliga o log
 
 ### Saída em JSON (`--format json`)
 
@@ -402,7 +405,7 @@ Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como f
 - Ferramentas: `datatool_info`, `datatool_profile` (+ `columns`/`max_columns`, padrão 50), `datatool_clean_diagnose`, `datatool_clean_apply` (grava em `output`) e `datatool_convert` (grava em `to_filename`) — cada uma devolve o mesmo JSON de [`--format json`](#saída-em-json---format-json)
 - Todo caminho de arquivo fica restrito ao diretório passado em `--root`; `output`/`to_filename` nunca pode ser o mesmo arquivo da entrada, e uma saída já existente exige `overwrite: true`
 - `redact_values` vem **ligado por padrão** nas ferramentas (diferente do CLI, onde vem desligado): os valores de célula não trafegam para o modelo de IA a menos que a pessoa configure a ferramenta com `redact_values: false`
-- Cada chamada é registrada em `logs/datatool.log` (relativo ao `--root`), com o nome prefixado (`mcp info`, `mcp clean`, ...)
+- Cada chamada é registrada em `<root>/logs/datatool.log` (ou onde `DATATOOL_LOG_DIR` apontar), com o nome prefixado (`mcp info`, `mcp clean`, ...)
 - Só ferramentas Community por enquanto — o detalhamento completo está em [specs/020-mcp-server.md](specs/020-mcp-server.md)
 
 ### Em desenvolvimento
@@ -414,17 +417,24 @@ Os comandos abaixo ainda não estão implementados: ficam ocultos no `--help` e,
 
 ## Desenvolvimento
 
-Rodar os testes:
+Rodar os testes (com cobertura; o CI exige pelo menos 95%):
 
 ```bash
-python -m pytest tests/ -v
+pytest --cov
 ```
 
-Rodar o lint:
+Rodar o lint, o formatador e a checagem de tipos:
 
 ```bash
-python -m ruff check src/ tests/
+ruff check src/ tests/
+ruff format --check src/ tests/
+pyright
 ```
+
+- Os testes ficam em `tests/`, um arquivo por comando/assunto; `conftest.py` e `helpers.py` têm o que é compartilhado
+- Durante os testes, o log vai para `./logs` do diretório temporário de cada teste (`DATATOOL_LOG_DIR`, no `conftest.py`)
+- As versões mínimas declaradas em `pyproject.toml` são verificadas no CI (job `test-minimum`, com `uv pip install --resolution lowest-direct`)
+- A versão vem da tag do git (`setuptools-scm`): publicar uma release com a tag `v0.2.0` gera o pacote `0.2.0`
 
 ## Estrutura do projeto
 

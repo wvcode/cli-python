@@ -25,7 +25,7 @@ Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanStrin
 ## Nota de implementação
 - As flags são aplicadas nesta ordem, apenas em colunas de tipo texto (`Utf8`): `--trim` → `--lowercase` → `--uppercase` → `--normalize-case`. Combinar `--lowercase` e `--uppercase` na mesma execução não é um erro; como ambas operam sobre a coluna inteira, a última da ordem acima "vence".
 - `--normalize-case` aplica title case a cada valor (`"PORTO ALEGRE"`/`"porto alegre"`/`"Porto Alegre"` → `"Porto Alegre"`); não há agrupamento por categoria com escolha de forma mais frequente — o valor canônico é sempre o resultado do title case.
-- `--output` reaproveita `infer_file_type`/`save_function` de [001-convert](001-convert.md): mesma inferência por extensão e mesmos erros (extensão não suportada, diretório sem permissão de escrita).
+- `--output` reaproveita `infer_file_type`/`save_file` de [001-convert](001-convert.md): mesma inferência por extensão e mesmos erros (extensão não suportada, diretório sem permissão de escrita).
 
 ## Dependências
 [001-convert](001-convert.md), [005-clean-detectar-problemas](005-clean-detectar-problemas.md)

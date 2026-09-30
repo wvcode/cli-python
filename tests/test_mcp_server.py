@@ -1,27 +1,11 @@
 import asyncio
 import os
-import shutil
-import tempfile
-from contextlib import contextmanager
+import sys
 
 import pytest
+from helpers import isolated_filesystem
 
-from datatool import mcp_server
-
-
-@contextmanager
-def isolated_filesystem():
-    """Mesmo padrão de tests/test_cli.py — diretório temporário isolado, usado
-    como `root` do servidor (assim o log de 017 cai em `./logs/`, dentro do
-    diretório do teste, igual ao `main()` real depois do `os.chdir`)."""
-    cwd = os.getcwd()
-    tmp_dir = tempfile.mkdtemp()
-    os.chdir(tmp_dir)
-    try:
-        yield tmp_dir
-    finally:
-        os.chdir(cwd)
-        shutil.rmtree(tmp_dir, ignore_errors=True)
+from datatool import mcp_cli, mcp_server
 
 
 def _call(server, name, **arguments):
@@ -416,14 +400,18 @@ class TestExecutionLog:
 
 class TestMissingMcpDependency:
     def test_main_explains_how_to_install_the_extra(self, monkeypatch):
-        # Simula `pip install datatool-cli` sem o extra `[mcp]`.
-        monkeypatch.setattr(mcp_server, "MCPServer", None)
+        # Simula `pip install datatool-cli` sem o extra `[mcp]`: o `mcp` (e o
+        # mcp_server, que o importa) deixam de ser importáveis.
+        for name in list(sys.modules):
+            if name == "mcp" or name.startswith("mcp."):
+                monkeypatch.setitem(sys.modules, name, None)
+        monkeypatch.delitem(sys.modules, "datatool.mcp_server")
         monkeypatch.setattr("sys.argv", ["datatool-mcp"])
 
         with pytest.raises(SystemExit) as exit_info:
-            mcp_server.main()
-        assert exit_info.value.code == mcp_server.MISSING_MCP_MESSAGE
-        assert "pip install 'datatool-cli[mcp]'" in mcp_server.MISSING_MCP_MESSAGE
+            mcp_cli.main()
+        assert exit_info.value.code == mcp_cli.MISSING_MCP_MESSAGE
+        assert "pip install 'datatool-cli[mcp]'" in mcp_cli.MISSING_MCP_MESSAGE
 
 
 class TestNoStdoutWrites:
@@ -489,3 +477,21 @@ class TestConcurrentCalls:
                 # Cada execução: início, lendo, detecção de encoding e de
                 # delimitador, lido, diagnóstico e fim — uma vez cada.
                 assert sum(f"[{run_id}]" in line for line in lines) == 7
+
+
+class TestMainLogDir:
+    def test_main_logs_under_root_without_changing_cwd(self, monkeypatch, tmp_path):
+        class FakeServer:
+            def run(self, transport):
+                self.transport = transport
+
+        from datatool import execution_log
+
+        monkeypatch.setattr(mcp_server, "build_server", lambda root: FakeServer())
+        monkeypatch.setattr("sys.argv", ["datatool-mcp", "--root", str(tmp_path)])
+        cwd = os.getcwd()
+
+        mcp_cli.main()
+
+        assert os.getcwd() == cwd
+        assert execution_log._default_log_dir == tmp_path.resolve() / "logs"

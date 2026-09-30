@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
-
 import sys
 from collections import namedtuple
 
+from .files import read_file
 from .loading import check_output, csv_text, load_input, output_file_type, write_output
 from .reporting import CommandError, build_document, file_summary
-from .structures import read_file
 
 ConvertResult = namedtuple(
     "ConvertResult", ["input", "to_filename", "to_type", "target_shape"]

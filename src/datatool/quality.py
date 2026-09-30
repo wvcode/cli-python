@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 import re
 from collections import namedtuple
 
@@ -9,7 +7,7 @@ from .documents import DOCUMENT_LABELS, summarize_documents
 from .formatting import format_int_ptbr
 from .inference import (
     SAMPLE_SIZE,
-    date_sample_shapes,
+    date_column_shapes,
     detect_decimal_separator,
     document_columns,
     numeric_text_columns,
@@ -70,9 +68,11 @@ def _phone_shape(value):
     return None
 
 
-def detect_documents(df):
+def detect_documents(df, columns=None):
+    if columns is None:
+        columns = document_columns(df)
     findings = []
-    for column in document_columns(df):
+    for column in columns:
         numeric_origin = df[column].dtype.is_integer()
         summary = summarize_documents(df[column], numeric_origin)
 
@@ -182,16 +182,11 @@ def detect_duplicates(df):
     return []
 
 
-def detect_date_format_variance(df):
+def detect_date_format_variance(df, shapes_by_column=None):
+    if shapes_by_column is None:
+        shapes_by_column = date_column_shapes(df)
     findings = []
-    for column in df.columns:
-        if df[column].dtype != pl.Utf8:
-            continue
-
-        shapes = date_sample_shapes(sample_values(df[column]))
-        if shapes is None:
-            continue
-
+    for column, shapes in shapes_by_column.items():
         distinct_shapes = set(shapes)
         if len(distinct_shapes) >= 2:
             findings.append(
@@ -207,9 +202,9 @@ def detect_date_format_variance(df):
     return findings
 
 
-def detect_numeric_as_text(df):
+def detect_numeric_as_text(df, dates=None, documents=None):
     findings = []
-    for column in numeric_text_columns(df):
+    for column in numeric_text_columns(df, dates=dates, documents=documents):
         # A amostra só decide se a coluna é reportada; a contagem é exata, com
         # o mesmo separador decimal que `clean --fix-types` usaria.
         counts = df[column].drop_nulls().value_counts()
@@ -400,12 +395,19 @@ def display_message(finding, redact_values):
 
 
 def analyze(df):
+    # Datas e CPF/CNPJ são classificados uma vez só e servem aos três
+    # detectores que dependem deles.
+    date_shapes = date_column_shapes(df)
+    documents = document_columns(df)
+
     findings = []
     findings.extend(detect_nulls(df))
     findings.extend(detect_duplicates(df))
-    findings.extend(detect_date_format_variance(df))
-    findings.extend(detect_documents(df))
-    findings.extend(detect_numeric_as_text(df))
+    findings.extend(detect_date_format_variance(df, date_shapes))
+    findings.extend(detect_documents(df, documents))
+    findings.extend(
+        detect_numeric_as_text(df, dates=list(date_shapes), documents=documents)
+    )
     return findings
 
 

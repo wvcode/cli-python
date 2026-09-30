@@ -1,12 +1,88 @@
 [build-system]
-requires = ["setuptools>=42"]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "datatool-cli"
+# Vem da tag do git (setuptools-scm): a tag v0.2.0 publica a versão 0.2.0.
+dynamic = ["version"]
+description = "Command line tool para ajudar na manipulação de dados."
+readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [{ name = "WVCode", email = "contato@wvcode.com.br" }]
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+# Mínimos verificados rodando a suíte com `uv pip install --resolution
+# lowest-direct` (ver o job `test-minimum` do CI).
+dependencies = [
+    # 0.16: primeira versão compatível com click >= 8.2 (com o 0.12, o --help
+    # quebra quando o pip instala o click atual).
+    "typer>=0.16",
+    "polars>=1.0",
+    "fastexcel>=0.10",
+    "xlsxwriter>=3.0",
+    "platformdirs>=3.0",
+]
+
+[project.optional-dependencies]
+# Servidor MCP (spec 020) — dependência pesada (uvicorn, pydantic,
+# cryptography, ...) que só quem usa agentes de IA precisa instalar.
+mcp = ["mcp>=2.0"]
+dev = [
+    "datatool-cli[mcp]",
+    # Os testes usam `result.stderr` separado do stdout: click >= 8.2, e o
+    # CliRunner do 8.2.0 não captura o stderr (corrigido no 8.2.1).
+    "click>=8.2.1",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "pyright>=1.1.380",
+]
+
+[project.urls]
+Homepage = "https://github.com/wvcode/cli-python"
+"Bug Tracker" = "https://github.com/wvcode/cli-python/issues"
+
+[project.scripts]
+datatool = "datatool.main:app"
+datatool-mcp = "datatool.mcp_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+# Sem histórico do git (ex.: tarball sem .git), em vez de falhar o build.
+fallback_version = "0.1.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Avisos de mudança futura (ex.: polars 2.0) quebram a suíte em vez de passar
+# despercebidos no meio da saída (DT24).
+filterwarnings = ["error::FutureWarning"]
+
+[tool.coverage.run]
+source = ["datatool"]
+
+[tool.coverage.report]
+show_missing = true
+# Cobertura atual ~97%; o CI falha se cair abaixo disto.
+fail_under = 95
+
+[tool.pyright]
+include = ["src"]
+typeCheckingMode = "basic"
+pythonVersion = "3.10"
 
 [tool.ruff]
 line-length = 88
+target-version = "py310"
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "B", "UP", "SIM"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]

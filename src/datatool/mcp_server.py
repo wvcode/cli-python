@@ -1,42 +1,28 @@
-# -*- coding: utf-8 -*-
-
 """Servidor MCP sobre o CLI (spec 020).
 
 Camada fina: cada ferramenta `datatool_*` valida o caminho de arquivo contra o
 sandbox (`--root`), chama a função Python do comando equivalente e devolve o
 mesmo documento de 019 que o `--format json` do CLI imprime, como
 `structured_content`. Nenhuma lógica de negócio mora aqui.
+
+Exige o extra `[mcp]`; o entry point `datatool-mcp` fica em `mcp_cli`, que
+importa este módulo só depois de conferir que o `mcp` está instalado.
 """
 
-import argparse
-import os
-import sys
 from pathlib import Path
-from typing import List, Optional
 
-try:
-    from mcp.server.mcpserver import MCPServer
-    from mcp.types import CallToolResult, TextContent, ToolAnnotations
-except ModuleNotFoundError as error:
-    # `mcp` é um extra opcional: sem ele, `main()` só explica como instalar.
-    if error.name != "mcp":
-        raise
-    MCPServer = None
+from mcp.server.mcpserver import MCPServer
+from mcp.types import CallToolResult, TextContent, ToolAnnotations
 
 from . import clean as clean_command
 from . import convert as convert_command
 from . import info as info_command
 from . import profiler as profile_command
 from .execution_log import logged
+from .files import FileType
 from .reporting import CommandError, build_error, error_document
-from .structures import FileType
 
 DEFAULT_MAX_COLUMNS = 50
-
-MISSING_MCP_MESSAGE = (
-    "O datatool-mcp precisa da dependência opcional 'mcp'. "
-    "Instale com: pip install 'datatool-cli[mcp]'"
-)
 
 
 class SandboxError(Exception):
@@ -79,7 +65,9 @@ def _parse_file_type(value, option_name):
         return FileType(value)
     except ValueError:
         allowed = ", ".join(member.value for member in FileType)
-        raise SandboxError(f"{option_name} inválido: {value}. Use um de: {allowed}")
+        raise SandboxError(
+            f"{option_name} inválido: {value}. Use um de: {allowed}"
+        ) from None
 
 
 def _summarize(document):
@@ -135,13 +123,13 @@ def build_server(root):
     root = Path(root).resolve()
     server = MCPServer("datatool_mcp")
     read_only = ToolAnnotations(
-        readOnlyHint=True,
-        destructiveHint=False,
-        idempotentHint=True,
-        openWorldHint=False,
+        read_only_hint=True,
+        destructive_hint=False,
+        idempotent_hint=True,
+        open_world_hint=False,
     )
     destructive = ToolAnnotations(
-        readOnlyHint=False, destructiveHint=True, openWorldHint=False
+        read_only_hint=False, destructive_hint=True, open_world_hint=False
     )
 
     @server.tool(
@@ -157,8 +145,8 @@ def build_server(root):
     @logged("mcp info")
     def datatool_info(
         filename: str,
-        sep: Optional[str] = None,
-        encoding: Optional[str] = None,
+        sep: str | None = None,
+        encoding: str | None = None,
         redact_values: bool = True,
     ) -> CallToolResult:
         try:
@@ -186,11 +174,11 @@ def build_server(root):
     @logged("mcp profile")
     def datatool_profile(
         filename: str,
-        key: Optional[str] = None,
-        columns: Optional[str] = None,
-        max_columns: Optional[int] = DEFAULT_MAX_COLUMNS,
-        sep: Optional[str] = None,
-        encoding: Optional[str] = None,
+        key: str | None = None,
+        columns: str | None = None,
+        max_columns: int | None = DEFAULT_MAX_COLUMNS,
+        sep: str | None = None,
+        encoding: str | None = None,
         redact_values: bool = True,
     ) -> CallToolResult:
         try:
@@ -225,8 +213,8 @@ def build_server(root):
     @logged("mcp clean_diagnose")
     def datatool_clean_diagnose(
         filename: str,
-        sep: Optional[str] = None,
-        encoding: Optional[str] = None,
+        sep: str | None = None,
+        encoding: str | None = None,
         redact_values: bool = True,
     ) -> CallToolResult:
         try:
@@ -265,20 +253,20 @@ def build_server(root):
         uppercase: bool = False,
         normalize_case: bool = False,
         remove_duplicates: bool = False,
-        key: Optional[str] = None,
-        fill_null: Optional[List[str]] = None,
+        key: str | None = None,
+        fill_null: list[str] | None = None,
         drop_null: bool = False,
-        columns: Optional[str] = None,
-        normalize_documents: Optional[str] = None,
-        document_columns: Optional[str] = None,
+        columns: str | None = None,
+        normalize_documents: str | None = None,
+        document_columns: str | None = None,
         normalize_dates: bool = False,
-        date_columns: Optional[str] = None,
+        date_columns: str | None = None,
         fix_types: bool = False,
-        decimal_separator: Optional[str] = None,
-        rename_columns: Optional[str] = None,
-        remove_columns: Optional[str] = None,
-        sep: Optional[str] = None,
-        encoding: Optional[str] = None,
+        decimal_separator: str | None = None,
+        rename_columns: str | None = None,
+        remove_columns: str | None = None,
+        sep: str | None = None,
+        encoding: str | None = None,
         redact_values: bool = True,
     ) -> CallToolResult:
         options = clean_command.CleanOptions(
@@ -341,10 +329,10 @@ def build_server(root):
         filename: str,
         to_filename: str,
         overwrite: bool = False,
-        from_type: Optional[str] = None,
-        to_type: Optional[str] = None,
-        sep: Optional[str] = None,
-        encoding: Optional[str] = None,
+        from_type: str | None = None,
+        to_type: str | None = None,
+        sep: str | None = None,
+        encoding: str | None = None,
     ) -> CallToolResult:
         try:
             resolved_input = _validate_input(root, filename)
@@ -371,26 +359,3 @@ def build_server(root):
         )
 
     return server
-
-
-def main():
-    parser = argparse.ArgumentParser(prog="datatool-mcp")
-    parser.add_argument(
-        "--root",
-        default=os.getcwd(),
-        help="Diretório raiz do sandbox de arquivos (padrão: diretório atual)",
-    )
-    args = parser.parse_args()
-    if MCPServer is None:
-        sys.exit(MISSING_MCP_MESSAGE)
-    root = Path(args.root).resolve()
-    server = build_server(root)
-    # O log de execução (spec 017) é relativo ao diretório de trabalho do
-    # processo; muda para `root` para o log cair em `<root>/logs/`, como a
-    # spec 020 pede, e não em onde o host do agente iniciou o processo.
-    os.chdir(root)
-    server.run(transport="stdio")
-
-
-if __name__ == "__main__":
-    main()

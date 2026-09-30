@@ -9,7 +9,7 @@ Origem: item [F03 do backlog](backlog-novas-features.md#f03--saída-estruturada-
 Hoje os três comandos só imprimem texto em pt-BR, com números formatados (`1.234`), `⚠`, sugestões numeradas e mensagens intercaladas com a tabela do DataFrame. Parsear isso é frágil: qualquer ajuste de texto quebra quem consome.
 
 O trabalho pesado já está feito e separado da impressão:
-- [src/datatool/profiling.py](../src/datatool/profiling.py) devolve um dicionário com `ColumnProfile`s;
+- [src/datatool/column_stats.py](../src/datatool/column_stats.py) devolve um dicionário com `ColumnProfile`s;
 - [src/datatool/quality.py](../src/datatool/quality.py) devolve `Finding`s (`category`, `message`, `column`, `count`).
 
 Esta spec transforma isso num **formato público e versionado**. Ele desbloqueia outras specs, que precisam de uma entrada estruturada:
@@ -225,7 +225,7 @@ Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestRedactValu
 - Exportar as linhas problemáticas de cada `problem`. É a extensão natural para quem precisa agir sobre os valores (ex.: CPFs inválidos de [018](018-cpf-cnpj-validacao.md)), mas envolve dados pessoais e merece uma decisão própria.
 
 ## Nota de implementação
-- Serialização e erros em [src/datatool/reporting.py](../src/datatool/reporting.py): `print_json` monta o envelope (`schema_version`, `command`) e trata `NaN`/`inf` e datas; `fail` imprime a mensagem de erro em texto ou em JSON e devolve o exit code. `--format` é o enum `OutputFormat` de [src/datatool/structures/output_format.py](../src/datatool/structures/output_format.py).
+- Serialização e erros em [src/datatool/reporting.py](../src/datatool/reporting.py): `print_json` monta o envelope (`schema_version`, `command`) e trata `NaN`/`inf` e datas; `fail` imprime a mensagem de erro em texto ou em JSON e devolve o exit code. `--format` é o enum `OutputFormat` de [src/datatool/reporting.py](../src/datatool/reporting.py) (era `structures/output_format.py` até o débito técnico DT23).
 - No `clean`, cada `_apply_*` devolve `(df, relatório)`. Em modo texto, o relatório é impresso logo depois de cada operação, com as mesmas linhas de antes; em JSON, os relatórios são acumulados em `operations`.
 - `unrecognized_distinct`/`failed_distinct` foram acrescentados aos relatórios de `normalize_dates`/`fix_types` em relação ao desenho original: o modo texto precisa do número de valores distintos para imprimir `... e mais N valores`, e o campo também é útil no JSON.
 - Com `--format json` e operações sem `--output`, o erro é dado antes de ler o arquivo, sem processar nada.
@@ -237,7 +237,7 @@ Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestRedactValu
 - **`types`:** em `detect_numeric_as_text` ([src/datatool/quality.py](../src/datatool/quality.py)), depois de a amostra decidir que a coluna é reportada, contar sobre os valores distintos da coluna inteira (`unique()`) com `_looks_numeric` e somar as ocorrências. *(Atualizado pelo DT07: a contagem usa `inference.parse_number`, o mesmo parser do `clean --fix-types`.)* Só roda nas colunas reportadas, então o custo extra é limitado. Um teste deve cobrir uma coluna com mais de 2.000 valores, para garantir que o `count` não fica preso ao tamanho da amostra.
 - **`Finding`:** ganha um campo opcional `examples` (padrão vazio), usado só por `case_inconsistency`. A `message` de texto desse detector continua sendo montada como hoje, para não mudar o modo texto.
 - **Serialização:** `json.dumps(..., ensure_ascii=False, indent=2, default=...)`, com um `default` que trata `date`/`datetime` (ISO) e cai em `str()` para o resto. `NaN`/`inf` tratados antes (o `json` da stdlib gera `NaN`, que não é JSON válido).
-- **`--format`:** pode reaproveitar o padrão de `Enum` já usado em [src/datatool/structures/](../src/datatool/structures/) (`FileType`, `EncodingType`) para o Typer validar os valores.
+- **`--format`:** pode reaproveitar o padrão de `Enum` já usado em `FileType`/`EncodingType` (hoje `OutputFormat` fica em [src/datatool/reporting.py](../src/datatool/reporting.py) e `FileType` em [src/datatool/files/types.py](../src/datatool/files/types.py), desde o débito técnico DT23) para o Typer validar os valores.
 - **Log de [017](017-csv-delimitador-encoding.md):** não muda; o log continua sem valores de células mesmo quando o JSON do stdout os contém.
 
 ## Dependências

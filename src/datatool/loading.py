@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """Validação, leitura e gravação de arquivos comuns a todos os comandos.
 
 Tudo aqui levanta `CommandError` com a mensagem e o exit code finais, para que
@@ -9,14 +7,14 @@ Tudo aqui levanta `CommandError` com a mensagem e o exit code finais, para que
 import os
 from collections import namedtuple
 
-from .reporting import CommandError, file_summary
-from .structures import (
+from .files import (
     SUPPORTED_EXTENSIONS,
     csv_options_error,
     infer_file_type,
     read_file,
     save_file,
 )
+from .reporting import CommandError, file_summary
 
 # `summary` é tirado na leitura: se a saída sobrescrever a entrada, o documento
 # JSON ainda descreve o arquivo que foi lido.

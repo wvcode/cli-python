@@ -52,7 +52,7 @@ datatool info vendas.csv --sep ";" --encoding latin-1   # override explícito
 - Tentar UTF-8; se falhar, cair para `cp1252`
 - Informar o que foi detectado quando diferir do padrão (`Delimitador detectado: ";"`)
 
-**Onde mexe.** Um wrapper de leitura de CSV em [src/datatool/structures/functions.py](../src/datatool/structures/functions.py) — todos os comandos se beneficiam sem mudar individualmente.
+**Onde mexe.** Um wrapper de leitura de CSV em [src/datatool/files/csv.py](../src/datatool/files/csv.py) — todos os comandos se beneficiam sem mudar individualmente.
 
 **Relação com o que existe.** O comando-esqueleto `dataset decode` (com `EncodingType`) parece ter sido pensado para isso; ver [reconciliação](#reconciliar-comandos-esqueleto).
 
@@ -95,7 +95,7 @@ datatool profile vendas.csv --format json > perfil.json
 datatool info vendas.csv --format json | jq '.problems[] | select(.category == "nulls")'
 ```
 
-**Onde mexe.** O trabalho pesado já está feito: [src/datatool/profiling.py](../src/datatool/profiling.py) retorna um dicionário e [src/datatool/quality.py](../src/datatool/quality.py) retorna `Finding`s. É basicamente serializar o que já existe, em vez de passar pelo `print`. Também desbloqueia o relatório HTML ([004](004-profile-relatorio-html.md)) e as specs de IA.
+**Onde mexe.** O trabalho pesado já está feito: [src/datatool/column_stats.py](../src/datatool/column_stats.py) retorna um dicionário e [src/datatool/quality.py](../src/datatool/quality.py) retorna `Finding`s. É basicamente serializar o que já existe, em vez de passar pelo `print`. Também desbloqueia o relatório HTML ([004](004-profile-relatorio-html.md)) e as specs de IA.
 
 ---
 
@@ -289,7 +289,7 @@ A ideia cita "histórico de operações" e "auditoria". Proposta: o `clean` grav
 
 ### F14 — Conectores (PostgreSQL, S3)
 
-Citados no plano Team da ideia. `convert` já tem a abstração certa (`read_function`/`save_function` por `FileType`); um conector seria mais um tipo, identificado por URI em vez de extensão (`postgresql://...`, `s3://bucket/arquivo.parquet`). Polars já suporta S3 nativamente em `scan_parquet`, e `pl.read_database_uri` cobre bancos. Baixa prioridade porque o posicionamento atual é "arquivos locais bagunçados", e conectores mudam o público-alvo.
+Citados no plano Team da ideia. `convert` já tem a abstração certa (`read_file`/`save_file`, com um leitor e um gravador por `FileType` em `files/`); um conector seria mais um tipo, identificado por URI em vez de extensão (`postgresql://...`, `s3://bucket/arquivo.parquet`). Polars já suporta S3 nativamente em `scan_parquet`, e `pl.read_database_uri` cobre bancos. Baixa prioridade porque o posicionamento atual é "arquivos locais bagunçados", e conectores mudam o público-alvo.
 
 ### F15 — Unir arquivos (`concat`/`join`)
 
@@ -313,7 +313,7 @@ O [src/datatool/main.py](../src/datatool/main.py) tem comandos que só imprimem 
 | `excel` (`--workbooks`, `--split`) | F04 (abas) e spec 013 |
 | `dataset explain` | Spec 014 (`datatool explain`) |
 | `dataset translate` (tradução de cabeçalho/conteúdo) | Nenhuma — seria uma feature nova |
-| `utils encode`/`decode` (base64 embaralhado) | Nenhuma; talvez relacionado ao licenciamento (016)? |
+| ~~`utils encode`/`decode` (base64 embaralhado)~~ | Removido no débito técnico DT22: era só ofuscação; o licenciamento (016) deve usar assinatura criptográfica |
 
 Hoje eles aparecem no `--help` e sucedem com exit code 0 sem fazer nada, o que confunde quem testa a ferramenta. Sugestão: decidir, para cada um, entre **remover**, **esconder** (`hidden=True` no Typer até ser implementado) ou **virar spec**. `dataset transform` em particular deveria ser removido em favor do `clean`, para não haver duas formas de fazer a mesma coisa.
 

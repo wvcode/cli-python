@@ -1,9 +1,6 @@
-# -*- coding: utf-8 -*-
-
 import sys
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import List, Optional
 
 import polars as pl
 
@@ -45,18 +42,18 @@ class CleanOptions:
     uppercase: bool = False
     normalize_case: bool = False
     remove_duplicates: bool = False
-    key: Optional[str] = None
-    fill_null: Optional[List[str]] = None
+    key: str | None = None
+    fill_null: list[str] | None = None
     drop_null: bool = False
-    drop_null_columns: Optional[str] = None
-    normalize_documents: Optional[str] = None
-    document_columns: Optional[str] = None
+    drop_null_columns: str | None = None
+    normalize_documents: str | None = None
+    document_columns: str | None = None
     normalize_dates: bool = False
-    date_columns: Optional[str] = None
+    date_columns: str | None = None
     fix_types: bool = False
-    decimal_separator: Optional[str] = None
-    rename_columns: Optional[str] = None
-    remove_columns: Optional[str] = None
+    decimal_separator: str | None = None
+    rename_columns: str | None = None
+    remove_columns: str | None = None
 
     def has_operations(self):
         return any(

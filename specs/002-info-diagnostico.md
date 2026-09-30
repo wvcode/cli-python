@@ -6,7 +6,7 @@ Como analista que recebeu um arquivo de terceiros, eu quero rodar um comando e v
 ## Contexto
 Este é o diferencial comercial citado na ideia: a ferramenta não só converte, ela **entende o arquivo e sugere operações**.
 
-Implementado em [src/datatool/info.py](../src/datatool/info.py) (orquestração: leitura, impressão) e [src/datatool/quality.py](../src/datatool/quality.py) (heurísticas de detecção, reutilizáveis pela futura spec 005). Desde o débito técnico DT07, o que é data, número em texto ou CPF/CNPJ é decidido em [src/datatool/inference.py](../src/datatool/inference.py), o mesmo módulo que o `clean` usa para corrigir. A leitura reaproveita `infer_file_type`/`read_function` de [001-convert](001-convert.md).
+Implementado em [src/datatool/info.py](../src/datatool/info.py) (orquestração: leitura, impressão) e [src/datatool/quality.py](../src/datatool/quality.py) (heurísticas de detecção, reutilizáveis pela futura spec 005). Desde o débito técnico DT07, o que é data, número em texto ou CPF/CNPJ é decidido em [src/datatool/inference.py](../src/datatool/inference.py), o mesmo módulo que o `clean` usa para corrigir. A leitura reaproveita `infer_file_type`/`read_file` de [001-convert](001-convert.md).
 
 ## Interface proposta
 ```bash

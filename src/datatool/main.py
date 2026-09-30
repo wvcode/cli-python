@@ -1,25 +1,16 @@
-# -*- coding: utf-8 -*-
-
-from typing import List, Optional, Tuple
+from enum import Enum
+from typing import Annotated
 
 import typer
-from typing_extensions import Annotated
 
+from . import __version__
 from . import clean as clean_command
 from . import convert as convert_command
 from . import info as info_command
 from . import profiler as profile_command
 from .execution_log import logged
-from .reporting import CommandError, fail, print_document
-from .structures import (
-    EncodingType,
-    FileType,
-    Language,
-    OnErrorType,
-    OutputFormat,
-)
-from .utils import decode as utils_decode
-from .utils import encode as utils_encode
+from .files import FileType
+from .reporting import CommandError, OutputFormat, fail, print_document
 
 app = typer.Typer()
 
@@ -28,14 +19,14 @@ FormatOption = Annotated[
     typer.Option("--format", case_sensitive=False, help="Formato da saída"),
 ]
 SepOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         "--sep",
         help="Delimitador do CSV de entrada (ex.: ';' ou '\\t'). Se omitido, detecta.",
     ),
 ]
 EncodingOption = Annotated[
-    Optional[str],
+    str | None,
     typer.Option(
         "--encoding",
         help="Encoding do CSV de entrada (ex.: cp1252, latin-1). Se omitido, detecta.",
@@ -60,9 +51,6 @@ RedactValuesOption = Annotated[
 dataset_app = typer.Typer()
 app.add_typer(dataset_app, name="dataset", hidden=True)
 
-utils_app = typer.Typer()
-app.add_typer(utils_app, name="utils")
-
 
 def _emit(command, output_format, run, to_document, print_text):
     """Roda o comando e escreve o resultado (texto ou JSON) ou o erro no stdout.
@@ -86,6 +74,57 @@ def _fail(command, output_format, error):
     raise typer.Exit(code=error.exit_code)
 
 
+def _print_version(value: bool):
+    if value:
+        print(f"datatool {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: Annotated[
+        bool | None,
+        typer.Option(
+            "--version",
+            callback=_print_version,
+            is_eager=True,
+            help="Mostra a versão e sai.",
+        ),
+    ] = None,
+):
+    pass
+
+
+# Opções dos comandos-esqueleto (`dataset`), ainda não implementados.
+class Language(str, Enum):
+    MANDARIN = "Mandarin"
+    SPANISH = "Spanish"
+    ENGLISH = "English"
+    HINDI = "Hindi"
+    GERMAN = "German"
+    ITALIAN = "Italian"
+    PORTUGUES = "Portugues"
+    FRENCH = "French"
+
+
+class EncodingType(str, Enum):
+    UTF8 = "utf-8"
+    ASCII = "ascii"
+    ISO_8859_1 = "iso-8859-1"
+    UTF16 = "utf-16"
+    UTF32 = "utf-32"
+    WINDOWS_1252 = "cp1252"
+    BIG5 = "big5"
+    GB2312 = "gb2312"
+    SHIFT_JIS = "shift_jis"
+    EUC_JP = "euc_jp"
+
+
+class OnErrorType(str, Enum):
+    IGNORE = "ignore"
+    REPLACE = "replace"
+
+
 def _not_implemented(command):
     # Comandos-esqueleto: ocultos no --help e com exit != 0, para que scripts e
     # agentes não confundam o placeholder com uma execução bem-sucedida.
@@ -100,9 +139,9 @@ def _not_implemented(command):
 @logged("convert")
 def convert(
     filename: str,
-    to_filename: Optional[str] = typer.Argument(None),
-    from_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
-    to_type: Annotated[Optional[FileType], typer.Option(case_sensitive=False)] = None,
+    to_filename: str | None = typer.Argument(None),
+    from_type: Annotated[FileType | None, typer.Option(case_sensitive=False)] = None,
+    to_type: Annotated[FileType | None, typer.Option(case_sensitive=False)] = None,
     show_stats: Annotated[bool, typer.Option("--show-stats")] = False,
     overwrite: OverwriteOption = False,
     output_format: FormatOption = OutputFormat.TEXT,
@@ -172,21 +211,21 @@ def info(
 def profile(
     filename: str,
     key: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
     ] = None,
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
     columns: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Restringe o profiling a essas colunas, separadas por vírgula. "
             "Se omitido, perfila todas."
         ),
     ] = None,
     max_columns: Annotated[
-        Optional[int],
+        int | None,
         typer.Option(
             help="Perfila só as N primeiras colunas (ordem do dataset), "
             "avisando quantas ficaram de fora. Se omitido, sem limite."
@@ -223,11 +262,11 @@ def clean(
     normalize_case: Annotated[bool, typer.Option("--normalize-case")] = False,
     remove_duplicates: Annotated[bool, typer.Option("--remove-duplicates")] = False,
     key: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Colunas-chave separadas por vírgula, ex.: cpf,email"),
     ] = None,
     fill_null: Annotated[
-        Optional[List[str]],
+        list[str] | None,
         typer.Option(
             "--fill-null",
             help="Valor para preencher nulos, ou coluna:valor. Repetível.",
@@ -235,7 +274,7 @@ def clean(
     ] = None,
     drop_null: Annotated[bool, typer.Option("--drop-null")] = False,
     drop_null_columns: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             "--drop-null-columns",
             # Nome antigo, mantido para não quebrar scripts.
@@ -244,11 +283,11 @@ def clean(
         ),
     ] = None,
     normalize_documents: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Formato de saída para CPF/CNPJ: 'digits' ou 'masked'."),
     ] = None,
     document_columns: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Colunas alvo de --normalize-documents, separadas por vírgula. "
             "Se omitido, detecta automaticamente."
@@ -256,7 +295,7 @@ def clean(
     ] = None,
     normalize_dates: Annotated[bool, typer.Option("--normalize-dates")] = False,
     date_columns: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Colunas alvo de --normalize-dates, separadas por vírgula. "
             "Se omitido, detecta automaticamente."
@@ -264,21 +303,21 @@ def clean(
     ] = None,
     fix_types: Annotated[bool, typer.Option("--fix-types")] = False,
     decimal_separator: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(
             help="Separador decimal usado por --fix-types: ',' ou '.'. "
             "Se omitido, detecta por coluna."
         ),
     ] = None,
     rename_columns: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Colunas a renomear, ex.: antigo:novo,foo:bar"),
     ] = None,
     remove_columns: Annotated[
-        Optional[str],
+        str | None,
         typer.Option(help="Colunas a remover, separadas por vírgula"),
     ] = None,
-    output: Annotated[Optional[str], typer.Option("--output")] = None,
+    output: Annotated[str | None, typer.Option("--output")] = None,
     overwrite: OverwriteOption = False,
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
@@ -346,9 +385,9 @@ def clean(
 @logged("excel")
 def excel(
     filename: str,
-    workbooks: List[str] = None,
+    workbooks: list[str] | None = None,
     split: Annotated[bool, typer.Option("--split")] = False,
-    output: str = None,
+    output: str | None = None,
 ):
     _not_implemented("excel")
 
@@ -362,7 +401,7 @@ def dataset_translate(
     filename: str,
     to: Annotated[Language, typer.Option()] = Language.PORTUGUES,
     only_header: Annotated[bool, typer.Option("--only-header")] = False,
-    output: str = None,
+    output: str | None = None,
 ):
     _not_implemented("dataset translate")
 
@@ -372,7 +411,7 @@ def dataset_translate(
 def dataset_explain(
     filename: str,
     only_columns: Annotated[bool, typer.Option("--only-columns")] = False,
-    output: str = None,
+    output: str | None = None,
 ):
     _not_implemented("dataset explain")
 
@@ -381,15 +420,15 @@ def dataset_explain(
 @logged("dataset transform")
 def dataset_transform(
     filename: str,
-    columns: List[str] = None,
-    fillna: str = None,
+    columns: list[str] | None = None,
+    fillna: str | None = None,
     capitalize: Annotated[bool, typer.Option("--capitalize")] = False,
     uppercase: Annotated[bool, typer.Option("--uppercase")] = False,
     lowercase: Annotated[bool, typer.Option("--lowercase")] = False,
-    replace: Annotated[Tuple[str, str], typer.Option()] = (None, None),
-    decode: str = None,
-    decurse: str = None,
-    output: str = None,
+    replace: Annotated[tuple[str, str] | None, typer.Option()] = None,
+    decode: str | None = None,
+    decurse: str | None = None,
+    output: str | None = None,
 ):
     _not_implemented("dataset transform")
 
@@ -402,33 +441,10 @@ def dataset_decode(
     onerror: Annotated[
         OnErrorType, typer.Option(case_sensitive=False)
     ] = OnErrorType.IGNORE,
-    onerror_value: str = None,
-    output: str = None,
+    onerror_value: str | None = None,
+    output: str | None = None,
 ):
     _not_implemented("dataset decode")
-
-
-# ----------------------------------------------------------------
-# Utils commands
-# ----------------------------------------------------------------
-@utils_app.command("encode")
-@logged("utils encode", log_args=False)
-def utils_encode2(from_value: str):
-    result = utils_encode(from_value)
-    if result:
-        print(result)
-    else:
-        raise typer.Exit(code=2)
-
-
-@utils_app.command("decode")
-@logged("utils decode", log_args=False)
-def utils_decode2(from_value: str):
-    result = utils_decode(from_value)
-    if result:
-        print(result)
-    else:
-        raise typer.Exit(code=2)
 
 
 # ----------------------------------------------------------------

@@ -25,17 +25,17 @@ Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = res
 | DT13 ✅ | 23 argumentos posicionais de `main.clean` → `file_clean` | CLI | Média | P |
 | DT14 ✅ | Mensagens de erro erradas ou inconsistentes | UX | Média | P |
 | DT15 ✅ | Flags conflitantes aceitas sem erro | clean | Média | P |
-| DT16 | Log gravado em `./logs` do diretório corrente | Log | Média | P |
+| DT16 ✅ | Log gravado em `./logs` do diretório corrente | Log | Média | P |
 | DT17 ✅ | `datatool-mcp` quebra com traceback sem o extra `[mcp]` | Packaging | Média | P |
-| DT18 | Dependências sem versão mínima; metadados divididos | Packaging | Média | P |
+| DT18 ✅ | Dependências sem versão mínima; metadados divididos | Packaging | Média | P |
 | DT19 ✅ | `convert` fora do padrão dos demais comandos | convert | Baixa | M |
 | DT20 ✅ | Contrato do `Finding` ambíguo | quality | Baixa | M |
-| DT21 | Detecção de documentos recalculada várias vezes | Performance | Baixa | P |
-| DT22 | `utils encode/decode`: ofuscação caseira sem propósito claro | CLI | Baixa | P |
-| DT23 | Nomes confusos de módulos e funções | Legibilidade | Baixa | P |
-| DT24 | Uso de API do polars que muda na 2.0 | IO | Baixa | P |
-| DT25 | Testes: arquivo monolítico, sem cobertura e fixando stubs | Testes | Baixa | M |
-| DT26 | Sem type hints/checker; ruff com poucas regras | Qualidade | Baixa | M |
+| DT21 ✅ | Detecção de documentos recalculada várias vezes | Performance | Baixa | P |
+| DT22 ✅ | `utils encode/decode`: ofuscação caseira sem propósito claro | CLI | Baixa | P |
+| DT23 ✅ | Nomes confusos de módulos e funções | Legibilidade | Baixa | P |
+| DT24 ✅ | Aviso do polars sobre a 2.0 na leitura de xlsx | IO | Baixa | P |
+| DT25 ✅ | Testes: arquivo monolítico, sem cobertura e fixando stubs | Testes | Baixa | M |
+| DT26 ✅ | Sem type hints/checker; ruff com poucas regras | Qualidade | Baixa | M |
 | DT27 ✅ | Arquivo solto `src/file.txt` versionado | Repo | Baixa | P |
 
 ---
@@ -187,6 +187,12 @@ Sobre centralizar: as mensagens repetidas já foram centralizadas no `loading.py
 
 **Correção:** usar o diretório de log do usuário (`platformdirs`), com a variável `DATATOOL_LOG_DIR` e uma opção para desligar.
 
+**Resolução:**
+- O log vai para `platformdirs.user_log_dir("datatool")` (ex.: `~/Library/Logs/datatool`). `DATATOOL_LOG_DIR` escolhe outro diretório (relativo ao atual, se não for absoluto), e `DATATOOL_NO_LOG=1` desliga o log.
+- O `datatool-mcp` usa `execution_log.set_default_log_dir(<root>/logs)` em vez de `os.chdir(root)`, e o env continua tendo prioridade.
+- Nos testes, um fixture em `conftest.py` aponta `DATATOOL_LOG_DIR` para `./logs` do diretório temporário de cada teste, para não gravar no diretório real do usuário.
+- Isso muda a decisão da spec 017 (log em `./logs`), que ganhou uma nota; quem quiser o comportamento antigo usa `DATATOOL_LOG_DIR=logs`.
+
 ### DT17 — `datatool-mcp` quebra sem o extra `[mcp]`
 O entry point é instalado sempre ([setup.py:39](../setup.py#L39)), mas `mcp` é opcional e importado no topo do módulo ([mcp_server.py:18](../src/datatool/mcp_server.py#L18)). Quem instalou só `datatool-cli` recebe um traceback de `ModuleNotFoundError`.
 
@@ -199,6 +205,13 @@ O entry point é instalado sempre ([setup.py:39](../setup.py#L39)), mas `mcp` é
 - A versão `0.1.0` está fixa no `setup.py`, sem `__version__`, sem `datatool --version` e sem vínculo com a tag do release. O workflow de publicação ([publish-pypi.yml](../.github/workflows/publish-pypi.yml)) não roda testes antes de publicar.
 
 **Correção:** migrar os metadados para `[project]` no `pyproject.toml`, definir limites mínimos, gerar a versão a partir da tag (`setuptools-scm`) e rodar os testes no workflow de publicação.
+
+**Resolução:**
+- `setup.py`, `requirements.txt` e `requirements-dev.txt` saíram. Tudo está no `[project]` do `pyproject.toml`, com os extras `mcp` e `dev`, e a licença como SPDX (`GPL-3.0-only`, a mesma do classifier "GPLv3" anterior). `typing_extensions` saiu.
+- Os mínimos foram verificados rodando a suíte no Python 3.10 com `uv pip install --resolution lowest-direct` (novo job `test-minimum` no CI): `polars>=1.0`, `fastexcel>=0.10`, `typer>=0.16`, `xlsxwriter>=3.0`, `platformdirs>=3.0` e `mcp>=2.0`.
+- Essa verificação achou um bug real: com `typer` 0.12–0.15 e o `click` atual (≥ 8.2), `datatool --help` quebrava (`make_metavar() missing ... 'ctx'`). Por isso o mínimo é 0.16. Para os testes, também `click>=8.2.1`, porque o `CliRunner` do 8.2.0 não captura o stderr.
+- A versão vem da tag do git (`setuptools-scm`, com `fallback_version`). `datatool.__version__` e `datatool --version` a expõem.
+- O workflow de publicação roda lint e testes antes do build (`needs: test`) e faz checkout com o histórico completo, para a versão sair da tag.
 
 ---
 
@@ -235,8 +248,17 @@ Quem consome o JSON (schema 019) não sabe o que `count` significa.
 
 **Atualização (DT07):** o problema mudou de lugar mas continua. `inference.numeric_text_columns` calcula `document_columns` e `date_columns` a cada chamada, e `analyze` também calcula as formas de data e as colunas de documento nos próprios detectores. Um cache por DataFrame, ou uma classificação única das colunas passada adiante, resolveria.
 
+**Resolução:** a classificação passou a ser feita uma vez e passada adiante, sem cache implícito. `inference.date_column_shapes(df)` classifica as datas de todas as colunas de texto numa passada. `quality.analyze` calcula datas e CPF/CNPJ uma vez e os entrega aos três detectores que dependem deles (`detect_date_format_variance`, `detect_documents` e `detect_numeric_as_text`, que ganharam parâmetros opcionais para receber a classificação pronta). Resultados:
+- num `info`, a classificação de CPF/CNPJ caiu de 2 para 1 execução, e a amostragem de datas de 2 para 1 por coluna de texto;
+- no CSV de 200 mil linhas e 10 colunas, o tempo foi de ~0,58 s para ~0,48 s;
+- a saída não mudou, conferida byte a byte em 72 comandos, e `TestColumnClassificationRunsOnce` conta as chamadas (falha na versão anterior).
+
+No `clean`, cada operação ainda classifica o DataFrame que recebe. Isso é necessário, porque as operações anteriores mudam os valores (ex.: `--normalize-dates` antes de `--fix-types`).
+
 ### DT22 — `utils encode/decode`: ofuscação caseira
 [utils.py](../src/datatool/utils.py) faz base64 com rotação de bytes, sem documentação de propósito. Não é criptografia; se a ideia é usar isso no licenciamento (spec 016), não protege nada. `encode("")` sai com exit 2. **Decidir:** remover, ou documentar e testar o caso de uso.
+
+**Resolução:** decidido remover. Saíram `utils.py`, o grupo `datatool utils` e seus testes, e também o parâmetro `log_args` do `@logged`, que só existia para não logar o valor a codificar. Se o licenciamento (spec 016) precisar validar algo, deve usar assinatura criptográfica, não ofuscação.
 
 ### DT23 — Nomes confusos
 - `profiler.py` (o comando) vs. `profiling.py` (o cálculo);
@@ -245,8 +267,19 @@ Quem consome o JSON (schema 019) não sabe o que `count` significa.
 - `read_function[FileType.CSV]` nunca é usado, porque `read_file` trata CSV à parte;
 - `utils_encode2`/`utils_decode2` em `main.py`.
 
+**Resolução:**
+- `profiling.py` virou `column_stats.py` (o cálculo das estatísticas); `profiler.py` continua sendo o comando, como a spec 003 decidiu para não colidir com o módulo `profile` da stdlib.
+- `structures/` virou o pacote `files/`: `types.py` (`FileType`, extensões e inferência), `csv.py` (detecção de delimitador e encoding) e `sqlite.py`; `read_file`/`save_file` ficam no `__init__`, com um leitor e um gravador por formato (`_READERS`/`_WRITERS`). Com isso sumiram o `functions.py` genérico, o `save_function` sombreado e o `read_function[CSV]` morto.
+- `OutputFormat` foi para `reporting.py`, e os enums usados só pelos comandos-esqueleto (`Language`, `EncodingType`, `OnErrorType`) para `main.py`.
+- `utils_encode2`/`utils_decode2` saíram com o DT22.
+- As specs com links para os caminhos antigos foram atualizadas, com nota do nome anterior.
+
 ### DT24 — Uso de API do polars que muda na 2.0
 A leitura de xlsx emite um `FutureWarning` (`from_arrow ... will return a Series instead of a DataFrame in 2.0`, via [structures/functions.py:127](../src/datatool/structures/functions.py#L127)), visível na execução dos testes. Com `polars` sem versão máxima (DT18), vai quebrar no upgrade.
+
+**Correção do diagnóstico:** o aviso não vem do nosso código. Quem chama `from_arrow()` é o próprio `pl.read_excel` (`_read_spreadsheet_calamine`, no polars 1.44 com fastexcel 0.21), então quem precisa se ajustar para a 2.0 é o polars, não o datatool. O problema real era o ruído, não uma quebra futura.
+
+**Resolução:** `structures.functions.read_excel` envolve o `pl.read_excel` e silencia só esse aviso, só nessa chamada. Além disso, o pytest passou a tratar `FutureWarning` como erro (`filterwarnings` no `pyproject.toml`), para que um aviso novo desse tipo quebre a suíte em vez de passar despercebido.
 
 ### DT25 — Testes
 - [test_cli.py](../tests/test_cli.py) tem 2.435 linhas num arquivo só. A sugestão é dividir por comando.
@@ -254,8 +287,20 @@ A leitura de xlsx emite um `FutureWarning` (`from_arrow ... will return a Series
 - Os testes dos comandos-esqueleto fixam um comportamento placeholder (DT06).
 - Faltam testes de regressão para DT01, DT05, DT07 e DT15.
 
+**Resolução:** os testes do DT06 e os de regressão de DT01, DT05, DT07 e DT15 já tinham entrado junto com esses itens. Agora:
+- `test_cli.py` (2.779 linhas) virou 12 arquivos por comando/assunto (o maior tem 785 linhas), com os mesmos 234 testes. `conftest.py` tem o `runner` e o fixture de log; `helpers.py` tem `isolated_filesystem`, `load_json`, `read_log` e `write_bytes`, antes privados e duplicados em `test_mcp_server.py`.
+- O CI mede cobertura (`pytest --cov`, hoje ~97%) e falha abaixo de 95% (`fail_under` no `pyproject.toml`).
+
 ### DT26 — Sem type hints/checker; ruff com poucas regras
 Quase nenhuma função tem anotação de tipo, e o ruff seleciona só `E, F, I`. Ativar `B`, `UP` e `SIM` pega bugs comuns (ex.: `List[str] = None` em [main.py:266](../src/datatool/main.py#L266)). Considerar `pyright` em modo básico.
+
+**Resolução:**
+- O ruff passou a usar `E, F, I, B, UP, SIM` (alvo `py310`). As correções foram quase todas automáticas: `X | None`, `list[...]` e a remoção de `# -*- coding -*-` e de `typing_extensions`. À mão, só `zip(..., strict=True)` no dígito verificador e um `raise ... from None`.
+- `pyright` em modo `basic` roda no CI com 0 erros. As correções foram reais:
+  - anotações erradas nos comandos-esqueleto (`str = None`);
+  - o tipo do `ContextVar` do log;
+  - o import opcional do `mcp`, que deixava nomes possivelmente indefinidos. Por isso o entry point do `datatool-mcp` foi para `mcp_cli.py`, que importa `mcp_server` só depois de conferir que o `mcp` está instalado, e `mcp_server` importa o `mcp` normalmente.
+- **Fora do escopo:** anotar todas as funções. O checker agora roda, e anotações podem entrar aos poucos, começando pelas APIs públicas (`loading`, `inference`, `documents`).
 
 ### DT27 — Arquivo solto versionado
 `src/file.txt` (`A, B / 1, 2`) não era usado por nenhum código ou teste.
@@ -269,4 +314,4 @@ Quase nenhuma função tem anotação de tipo, e o ruff seleciona só `E, F, I`.
 1. ~~**Rápidos e de alto impacto:** DT02, DT03, DT01, DT05, DT06, DT14, DT15, DT17, DT27.~~ Feito (DT14 em parte).
 2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13, e depois DT04 e DT19.~~ Feito.
 3. ~~**Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.~~ Feito.
-4. **Higiene contínua:** DT16, DT18, DT24, DT25, DT26.
+4. ~~**Higiene contínua:** DT16, DT18, DT24, DT25, DT26.~~ Feito.
