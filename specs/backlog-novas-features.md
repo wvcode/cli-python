@@ -28,6 +28,7 @@ Os IDs usam o prefixo `F` para não colidir com a numeração das specs. Esforç
 | F14 | Conectores (PostgreSQL, S3) | Ideia | Team | G | Baixa | — |
 | F15 | Unir arquivos (`concat`/`join`) | Novo | Community | M | Baixa | — |
 | F16 | Servidor MCP sobre o CLI (agentes de IA) | Novo | Community | M | Alta | [020](020-mcp-server.md) |
+| F17 | Ler o arquivo de entrada a partir de uma URL | Novo | Community | M | Média | [021](021-leitura-via-url.md) |
 
 Há também uma pendência de **higiene** (não é feature, mas afeta o produto): ver [Reconciliar comandos-esqueleto](#reconciliar-comandos-esqueleto).
 
@@ -280,6 +281,12 @@ datatool head vendas.csv --columns nome,valor
 **Esforço G** porque exige revisar os módulos de leitura e todos os operadores; vale medir antes (qual o limite real hoje?) com um benchmark reproduzível.
 
 ---
+
+### F17 — Ler o arquivo de entrada a partir de uma URL
+
+> Detalhada na spec [021-leitura-via-url](021-leitura-via-url.md).
+
+Aceitar `http://`/`https://` no lugar do arquivo de entrada de `info`, `profile`, `clean` e `convert`, baixando para um arquivo temporário e seguindo o fluxo normal. Assim a detecção de `;`/`cp1252`, o SQLite e o resumo do arquivo continuam funcionando. No servidor MCP, fica desligado por padrão (`--allow-urls`), para o agente não poder acessar endereços da rede interna. Hoje o contorno é baixar antes com `curl`.
 
 ## Baixa prioridade
 
