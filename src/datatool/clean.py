@@ -10,11 +10,10 @@ from .formatting import format_int_ptbr
 from .inference import (
     DECIMAL_SEPARATORS,
     date_columns,
-    date_formats_for,
     detect_decimal_separator,
     document_columns,
     numeric_text_columns,
-    parse_date,
+    parse_dates,
     parse_number,
 )
 from .loading import (
@@ -208,21 +207,17 @@ def _apply_normalize_dates(df, options):
 
     column_reports = []
     for column in columns:
-        values = df[column].drop_nulls().unique().to_list()
-        formats = date_formats_for(values)
+        values = df[column].drop_nulls().unique()
+        parsed = parse_dates(values)
+        iso = parsed.dt.to_string("%Y-%m-%d")
 
-        mapping = {}
-        unrecognized = []
-        for value in values:
-            parsed = parse_date(value, formats)
-            if parsed is None:
-                unrecognized.append(value)
-            elif parsed.isoformat() != value:
-                mapping[value] = parsed.isoformat()
+        unrecognized = values.filter(parsed.is_null()).to_list()
+        changed = parsed.is_not_null() & (iso != values)
+        old_values = values.filter(changed)
 
-        normalized_count = df[column].is_in(list(mapping)).sum()
+        normalized_count = df[column].is_in(old_values.to_list()).sum()
         unrecognized_count = df[column].is_in(unrecognized).sum()
-        df = df.with_columns(pl.col(column).replace(mapping))
+        df = df.with_columns(pl.col(column).replace(old_values, iso.filter(changed)))
         column_reports.append(
             {
                 "column": column,

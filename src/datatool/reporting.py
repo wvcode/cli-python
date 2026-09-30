@@ -52,14 +52,10 @@ def print_document(document):
 
 def build_document(command, **fields):
     """Monta e sanitiza o envelope JSON (schema_version/command + campos), sem
-    imprimir — usado por `print_json` (CLI) e por quem precisa do dict direto
-    (ex.: o servidor MCP de 020, que não pode escrever no stdout do CLI)."""
+    imprimir — o CLI imprime o resultado com `print_document`, e o servidor MCP
+    de 020 devolve o dict direto, sem escrever no stdout."""
     document = {"schema_version": SCHEMA_VERSION, "command": command, **fields}
     return _sanitize(document)
-
-
-def print_json(command, **fields):
-    print_document(build_document(command, **fields))
 
 
 def build_error(command, message, exit_code):

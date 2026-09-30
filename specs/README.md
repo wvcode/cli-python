@@ -36,6 +36,8 @@ Segundo a ideia, o menor produto funcional cobre: **001, 002, 003, 005, 006, 007
 
 Propostas de features ainda sem spec (lacunas encontradas no código, itens da ideia sem spec e oportunidades para o mercado BR) estão em [backlog-novas-features.md](backlog-novas-features.md).
 
+Problemas do código já existente (bugs, riscos e dívidas de arquitetura, testes e documentação), com o que foi resolvido e como, estão em [debito-tecnico.md](debito-tecnico.md).
+
 ## Template usado em cada spec
 - User story (Como / eu quero / para que)
 - Contexto (por que importa, referência à ideia)

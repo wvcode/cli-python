@@ -8,7 +8,6 @@ mesmas regras.
 
 import re
 from collections import namedtuple
-from datetime import datetime
 
 import polars as pl
 
@@ -70,62 +69,116 @@ _ALL_DATE_FORMATS = _YEAR_FIRST_FORMATS + _DAY_FIRST_FORMATS + _MONTH_FIRST_FORM
 # "yyyymmdd" não é reconhecido de propósito (spec 009): é indistinguível de
 # códigos numéricos de 8 dígitos.
 #
-# Filtro barato antes do strptime: descarta de cara o que nem tem forma de
-# data (a maioria dos valores numa coluna que não é de datas).
-_DATE_CANDIDATE = re.compile(
-    r"^\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}(?:[ T]\d{1,2}:\d{1,2}:\d{1,2})?$"
-)
+# Tudo vetorizado no polars (DT32): uma coluna com dezenas de milhares de
+# datas distintas não passa valor a valor pelo Python. Cada formato vira uma
+# regex que aceita o mesmo que o `strptime` aceitaria com esse padrão (dia e
+# mês com 1 ou 2 dígitos, %Y com 4, %y com 2, hora até 23, minuto e segundo
+# até 59), e o polars valida a data (31/02 não existe).
+_FIELD_REGEX = {
+    "%Y": r"(?P<year>[0-9]{4})",
+    "%y": r"(?P<short_year>[0-9]{2})",
+    "%m": r"(?P<month>1[0-2]|0[1-9]|[1-9])",
+    "%d": r"(?P<day>3[01]|[12][0-9]|0[1-9]|[1-9])",
+    "%H": r"(?:2[0-3]|[01][0-9]|[0-9])",
+    "%M": r"(?:[0-5][0-9]|[0-9])",
+    "%S": r"(?:[0-5][0-9]|[0-9])",
+    ".": r"\.",
+}
+# Ano com dois dígitos, como no strptime: 00–68 → 2000–2068, 69–99 → 1969–1999.
+_SHORT_YEAR_PIVOT = 68
 
 
-def _match_date_format(value, formats):
-    value = value.strip()
-    if not _DATE_CANDIDATE.match(value):
-        return None, None
-    for date_format in formats:
-        try:
-            return date_format, datetime.strptime(value, date_format.pattern).date()
-        except ValueError:
-            continue
-    return None, None
+def _format_regex(pattern):
+    tokens: list[str] = re.findall(r"%.|.", pattern)
+    return "^" + "".join(_FIELD_REGEX.get(token, token) for token in tokens) + "$"
 
 
-def parse_date(value, formats=_ALL_DATE_FORMATS):
-    """A data de `value` no primeiro formato de `formats` que casar, ou None."""
-    return _match_date_format(value, formats)[1]
+def _parse_format(text, date_format):
+    """Expressão: a data de cada valor de `text` em `date_format`, ou nulo."""
+    parts = text.str.extract_groups(_format_regex(date_format.pattern))
+    if "%Y" in date_format.pattern:
+        year = parts.struct.field("year").cast(pl.Int32)
+    else:
+        short_year = parts.struct.field("short_year").cast(pl.Int32)
+        year = (
+            pl.when(short_year <= _SHORT_YEAR_PIVOT)
+            .then(short_year + 2000)
+            .otherwise(short_year + 1900)
+        )
+    iso = pl.concat_str(
+        [
+            year.cast(pl.Utf8).str.zfill(4),
+            parts.struct.field("month").str.zfill(2),
+            parts.struct.field("day").str.zfill(2),
+        ],
+        separator="-",
+    )
+    # O polars aceita o ano 0; o Python (e o strptime) não.
+    return pl.when(year >= 1).then(iso.str.to_date("%Y-%m-%d", strict=False))
 
 
-def date_shape(value):
-    """A forma de data de `value` (ex.: "dd/mm/yyyy"), ou None."""
-    date_format, _ = _match_date_format(value, _ALL_DATE_FORMATS)
-    return date_format.shape if date_format else None
+def _parse_all_formats(values):
+    """Uma coluna de datas por formato de `_ALL_DATE_FORMATS` (na mesma ordem,
+    chamadas "0", "1", ...), nula onde o valor não está naquele formato."""
+    text = pl.col("value").str.strip_chars()
+    return pl.DataFrame({"value": values}, schema={"value": pl.Utf8}).select(
+        _parse_format(text, date_format).alias(str(index))
+        for index, date_format in enumerate(_ALL_DATE_FORMATS)
+    )
 
 
-def date_formats_for(values):
-    """Formatos, em ordem de preferência, para interpretar `values`.
+def _columns_of(formats):
+    return [str(_ALL_DATE_FORMATS.index(date_format)) for date_format in formats]
 
-    "01/02/1990" é ambíguo. Só assume mm/dd quando a coluna tem valores que só
+
+def parse_dates(values):
+    """As datas de `values` (Series de texto), nulas onde não há data.
+
+    Cada valor fica com o primeiro formato que casar, em ordem de preferência.
+    "01/02/1990" é ambíguo: só assume mm/dd quando a coluna tem valores que só
     fazem sentido como mm/dd (ex.: "12/31/1990") e nenhum que só faça sentido
     como dd/mm (ex.: "31/12/1990"); caso contrário, dd/mm tem prioridade.
     """
-    day_first_only = False
-    month_first_only = False
-    for value in values:
-        day_first = parse_date(value, _DAY_FIRST_FORMATS) is not None
-        month_first = parse_date(value, _MONTH_FIRST_FORMATS) is not None
-        day_first_only = day_first_only or (day_first and not month_first)
-        month_first_only = month_first_only or (month_first and not day_first)
+    parsed = _parse_all_formats(values)
+    year_first = _columns_of(_YEAR_FIRST_FORMATS)
+    day_first = _columns_of(_DAY_FIRST_FORMATS)
+    month_first = _columns_of(_MONTH_FIRST_FORMATS)
 
-    if month_first_only and not day_first_only:
-        return _YEAR_FIRST_FORMATS + _MONTH_FIRST_FORMATS + _DAY_FIRST_FORMATS
-    return _YEAR_FIRST_FORMATS + _DAY_FIRST_FORMATS + _MONTH_FIRST_FORMATS
+    is_day_first = pl.any_horizontal(pl.col(day_first).is_not_null())
+    is_month_first = pl.any_horizontal(pl.col(month_first).is_not_null())
+    evidence = parsed.select(
+        day_first_only=(is_day_first & ~is_month_first).any(),
+        month_first_only=(is_month_first & ~is_day_first).any(),
+    ).row(0, named=True)
+
+    if evidence["month_first_only"] and not evidence["day_first_only"]:
+        order = year_first + month_first + day_first
+    else:
+        order = year_first + day_first + month_first
+    return parsed.select(pl.coalesce(order)).to_series()
 
 
 def date_sample_shapes(sample):
     """Formas de data de uma amostra, se ela for de uma coluna de datas
     (proporção mínima de valores reconhecidos); senão, None."""
-    shapes = [date_shape(value) for value in sample]
-    matched = [shape for shape in shapes if shape is not None]
-    if not sample or len(matched) / len(sample) < DATE_MATCH_RATIO:
+    if not sample:
+        return None
+    # `shape` não distingue dd/mm de mm/dd, então a preferência não importa.
+    parsed = _parse_all_formats(sample)
+    matched = (
+        parsed.select(
+            pl.coalesce(
+                pl.when(pl.col(str(index)).is_not_null()).then(
+                    pl.lit(date_format.shape)
+                )
+                for index, date_format in enumerate(_ALL_DATE_FORMATS)
+            )
+        )
+        .to_series()
+        .drop_nulls()
+        .to_list()
+    )
+    if len(matched) / len(sample) < DATE_MATCH_RATIO:
         return None
     return matched
 

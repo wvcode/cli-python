@@ -527,8 +527,8 @@
     </div>
     <div class="stat-row">
       <div><span class="num">10/10</span><span class="label">user stories do MVP</span></div>
-      <div><span class="num">202</span><span class="label">testes automatizados</span></div>
-      <div><span class="num">20</span><span class="label">specs públicas</span></div>
+      <div><span class="num">311</span><span class="label">testes automatizados</span></div>
+      <div><span class="num">21</span><span class="label">specs públicas</span></div>
     </div>
   </div>
 
@@ -544,12 +544,15 @@ Tamanho: 711 bytes
 Problemas encontrados:
   <span class="flag">⚠ 3 valores nulos em "email"</span>
   <span class="flag">⚠ 1 linhas duplicadas</span>
-  <span class="flag">⚠ "data_nascimento" contém 5 formatos de data diferentes</span>
+  <span class="flag">⚠ "data_nascimento" contém 4 formatos de data diferentes</span>
+  <span class="flag">⚠ 10 CPFs com dígito verificador inválido</span>
   <span class="flag">⚠ "idade" está armazenada como texto mas parece numérica</span>
 
 Sugestões:
   1. Corrigir tipos <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --fix-types</span>
   2. Remover duplicidades <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --remove-duplicates</span>
+  3. Normalizar datas <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --normalize-dates</span>
+  4. Tratar valores nulos <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --drop-null</span>
 <span class="prompt">$</span> <span class="cursor"></span></pre>
   </div>
 </div>
@@ -657,7 +660,7 @@ cidade
   <div class="cmd-grid">
     <div class="cmd-card">
       <h3>convert</h3>
-      <p>Converte entre CSV, JSON, JSONL, Excel, Parquet e SQLite. O formato é inferido pela extensão do arquivo.</p>
+      <p>Converte entre CSV, JSON, JSONL, Excel, Parquet, Feather, Avro e SQLite. O formato é inferido pela extensão do arquivo.</p>
       <code class="block">datatool convert vendas.xlsx vendas.parquet</code>
     </div>
     <div class="cmd-card">
@@ -693,16 +696,22 @@ cidade
   <span class="muted">"status"</span>: <span class="accent">"ok"</span>,
   <span class="muted">"file"</span>: {
     <span class="muted">"path"</span>: <span class="accent">"clientes.csv"</span>,
+    <span class="muted">"format"</span>: <span class="accent">"csv"</span>,
     <span class="muted">"rows"</span>: 10,
-    <span class="muted">"columns"</span>: 6
+    <span class="muted">"columns"</span>: 6,
+    <span class="muted">"size_bytes"</span>: 711
   },
   <span class="muted">"problems"</span>: [
     {
       <span class="muted">"category"</span>: <span class="accent">"nulls"</span>,
       <span class="muted">"column"</span>: <span class="accent">"email"</span>,
-      <span class="muted">"count"</span>: 3
-    }
-  ]
+      <span class="muted">"count"</span>: 3,
+      <span class="muted">"count_unit"</span>: <span class="accent">"values"</span>,
+      <span class="muted">"message"</span>: <span class="accent">"3 valores nulos em \"email\""</span>
+    },
+    <span class="muted">…</span>
+  ],
+  <span class="muted">"suggestions"</span>: [ <span class="muted">…</span> ]
 }</pre>
     </div>
   </div>
@@ -745,7 +754,7 @@ cidade
 <section class="wrap" id="instalacao">
   <div class="section-head">
     <h2>Instalação</h2>
-    <p>Ainda não publicado no PyPI — instale a partir do código-fonte.</p>
+    <p>Ainda não publicado no PyPI — instale a partir do código-fonte. A partir da primeira release, bastará <code>pip install datatool-cli</code> (o comando continua <code>datatool</code>).</p>
   </div>
   <div class="terminal" style="max-width: 620px;">
     <div class="bar"><span></span><span></span><span></span></div>

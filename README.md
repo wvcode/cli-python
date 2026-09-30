@@ -57,7 +57,7 @@ datatool convert vendas.xlsx vendas.csv
 ```
 
 - Formatos suportados: **CSV, JSON, JSONL, Excel (xlsx), Parquet, SQLite**, além de Feather e Avro.
-- SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas.
+- SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas. Booleanos, datas e data-hora são gravados com o tipo declarado (`BOOLEAN`, `DATE`, `TIMESTAMP`) e voltam com o mesmo tipo na leitura. Data-hora com fuso volta em UTC, no mesmo instante.
 - Os tipos das colunas são inferidos com o arquivo inteiro, não só com as primeiras linhas: um valor como `N/D` numa coluna numérica, em qualquer posição, faz a coluna ser lida como texto (o `info` aponta e o `clean --fix-types` corrige), em vez de impedir a leitura ou virar nulo.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
 - Se `to_filename` for omitido, o dataset inteiro é impresso no stdout em CSV, pronto para pipe (`datatool convert vendas.xlsx | head`).

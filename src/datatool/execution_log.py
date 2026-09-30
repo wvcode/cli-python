@@ -5,12 +5,10 @@ import os
 import threading
 import time
 import uuid
-from collections import namedtuple
 from enum import Enum
 from logging.handlers import RotatingFileHandler
 
 import platformdirs
-import typer
 
 LOG_FILE = "datatool.log"
 # Onde gravar: DATATOOL_LOG_DIR (relativo ao diretório atual, se não for
@@ -31,9 +29,18 @@ log.propagate = False
 # Sem nenhum handler, o logging imprimiria WARNING/ERROR no stderr ("last resort").
 log.addHandler(logging.NullHandler())
 
-# Execução corrente, por contexto (thread/tarefa): o servidor MCP roda
-# ferramentas em paralelo, cada uma numa thread, todas no mesmo logger.
-_Run = namedtuple("_Run", ["run_id", "command", "handler"])
+
+class _Run:
+    """Execução corrente, por contexto (thread/tarefa): o servidor MCP roda
+    ferramentas em paralelo, cada uma numa thread, todas no mesmo logger."""
+
+    def __init__(self, run_id, command, handler):
+        self.run_id = run_id
+        self.command = command
+        self.handler = handler
+        self.exit_code = 0
+
+
 _current_run: contextvars.ContextVar["_Run | None"] = contextvars.ContextVar(
     "datatool_run", default=None
 )
@@ -116,6 +123,15 @@ def _release_handler(handler):
             handler.close()
 
 
+def set_exit_code(exit_code):
+    """Informa o exit code da execução corrente, para quem sinaliza falha sem
+    levantar exceção (as ferramentas do servidor MCP devolvem o erro no
+    resultado)."""
+    run = _current_run.get()
+    if run is not None:
+        run.exit_code = exit_code
+
+
 def _format_args(kwargs):
     parts = []
     for name, value in kwargs.items():
@@ -128,32 +144,40 @@ def _format_args(kwargs):
 
 
 def logged(command):
-    """Registra início, fim, exit code e duração de um comando do CLI."""
+    """Registra início, fim, exit code e duração de um comando do CLI ou de uma
+    ferramenta do servidor MCP.
+
+    O exit code vem de `set_exit_code` ou da exceção que encerrou o comando:
+    uma exceção com atributo `exit_code` (o `typer.Exit` do CLI, um
+    `CommandError`) é uma saída prevista; qualquer outra é erro inesperado
+    (exit code 1), registrado com traceback.
+    """
 
     def decorator(function):
         @functools.wraps(function)
         def wrapper(*args, **kwargs):
             handler = _acquire_handler()
-            token = _current_run.set(_Run(uuid.uuid4().hex[:6], command, handler))
+            run = _Run(uuid.uuid4().hex[:6], command, handler)
+            token = _current_run.set(run)
             started = time.monotonic()
             log.info(
                 "início — args: %s",
                 _format_args(kwargs),
             )
 
-            exit_code = 0
             try:
                 return function(*args, **kwargs)
-            except typer.Exit as error:
-                exit_code = error.exit_code
-                raise
-            except Exception:
-                exit_code = 1
-                log.exception("erro inesperado")
+            except Exception as error:
+                exit_code = getattr(error, "exit_code", None)
+                if isinstance(exit_code, int):
+                    run.exit_code = exit_code
+                else:
+                    run.exit_code = 1
+                    log.exception("erro inesperado")
                 raise
             finally:
                 elapsed = f"{time.monotonic() - started:.2f}".replace(".", ",")
-                log.info("fim — exit code %s, %s s", exit_code, elapsed)
+                log.info("fim — exit code %s, %s s", run.exit_code, elapsed)
                 _current_run.reset(token)
                 if handler is not None:
                     _release_handler(handler)

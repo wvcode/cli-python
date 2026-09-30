@@ -6,7 +6,7 @@ Itens marcados com **(reproduzido)** foram confirmados executando o CLI. Feature
 
 Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = resolvido · ◐ = resolvido em parte (ver a nota "Resolução" no item).
 
-Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles.
+Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos.
 
 ## Resumo
 
@@ -320,12 +320,12 @@ Revisão do código depois da resolução de DT01–DT27 (commit `b37d80a`). Est
 | DT28 ✅ | Valor fora do padrão depois das primeiras linhas: arquivo não abre (CSV/JSON/JSONL) ou vira nulo em silêncio (Excel) | IO | Alta | P |
 | DT29 ✅ | `--normalize-documents --document-columns` em coluna não textual quebra com traceback | clean | Média | P |
 | DT30 ✅ | Opções de parâmetro do `clean` ignoradas em silêncio | clean | Média | P |
-| DT31 | SQLite perde tipos na ida e volta e não abre colunas com tipos mistos | IO | Média | M |
-| DT32 | `--normalize-dates` lento em colunas com muitos valores distintos | Performance | Baixa | M |
-| DT33 | Log do MCP registra "exit code 0" quando a ferramenta falha | Log/MCP | Baixa | P |
-| DT34 | Código morto: `print_json` | Legibilidade | Baixa | P |
-| DT35 | Lacunas de teste: `--version` e o `datatool-mcp` de verdade (stdio) | Testes | Baixa | P |
-| DT36 | Site e índice das specs desatualizados | Docs | Baixa | P |
+| DT31 ✅ | SQLite perde tipos na ida e volta e não abre colunas com tipos mistos | IO | Média | M |
+| DT32 ✅ | `--normalize-dates` lento em colunas com muitos valores distintos | Performance | Baixa | M |
+| DT33 ✅ | Log do MCP registra "exit code 0" quando a ferramenta falha | Log/MCP | Baixa | P |
+| DT34 ✅ | Código morto: `print_json` | Legibilidade | Baixa | P |
+| DT35 ✅ | Lacunas de teste: `--version` e o `datatool-mcp` de verdade (stdio) | Testes | Baixa | P |
+| DT36 ✅ | Site e índice das specs desatualizados | Docs | Baixa | P |
 
 ### DT28 — Valor fora do padrão depois das primeiras linhas **(reproduzido)**
 [files/__init__.py](../src/datatool/files/__init__.py), [files/csv.py:89](../src/datatool/files/csv.py#L89)
@@ -379,12 +379,32 @@ O servidor MCP já recusa `datatool_clean_apply` sem operação; o CLI não.
 
 **Correção:** na gravação, declarar `BOOLEAN`, `DATE` e `TIMESTAMP` conforme o dtype. Na leitura, usar o tipo declarado (`PRAGMA table_info`) para converter de volta e `infer_schema_length=None` (ou ler colunas de tipo misto como texto). Avaliar `pl.read_database` com o cursor, para não passar por tuplas Python.
 
+**Resolução:**
+- **Gravação:** `Boolean`, `Date` e `Datetime` são declarados como `BOOLEAN`, `DATE` e `TIMESTAMP`. As datas vão como texto ISO convertido pelo polars, e não pelo adaptador padrão do `sqlite3`, que está obsoleto desde o Python 3.12 e emitia `DeprecationWarning`.
+- **Leitura, tipos mistos:** o DataFrame é montado com `infer_schema_length=None`. Uma coluna `INTEGER` com um "N/D" na linha 151 abre como texto, e o `info` a aponta como número guardado em texto, igual aos demais formatos desde o DT28.
+- **Leitura, tipo declarado:** `BOOLEAN`, `DATE`, `DATETIME` e `TIMESTAMP` (`PRAGMA table_info`) são convertidos de volta **só quando todos os valores servem**: 0/1 para booleano, texto ISO (`AAAA-MM-DD...`) de conversão estrita para datas. O SQLite não impõe o tipo declarado, e um banco gravado por outra ferramenta pode ter "ontem" numa coluna `DATE`. Nesses casos a coluna fica como veio, sem virar nulo em silêncio. Texto fora do ISO ("01/02/2024") não é convertido, por ser ambíguo.
+- A ida e volta parquet → db → parquet preserva schema e valores (inteiro, real, texto, booleano, data, data-hora, com nulos).
+- **Limitações:** data-hora com fuso volta em UTC, no mesmo instante, porque o SQLite guarda só o deslocamento. Data-hora sempre volta em microssegundos, então nanossegundos perdem os três últimos dígitos.
+- **`pl.read_database`:** avaliado e descartado. Com o `sqlite3` da stdlib ele também passa por tuplas Python e não foi mais rápido (0,146 s contra 0,134 s do `fetchall` numa tabela de 200 mil linhas). Evitar as tuplas exigiria uma dependência nova (connectorx/ADBC).
+- 17 testes em `tests/test_sqlite.py`. Os 6 de ida e volta e tipos mistos falham na versão anterior. Os demais protegem contra conversão indevida, um risco que só o código novo introduz, e dois deles cobrem o `ComputeError` do polars quando não há formato inferível. A saída dos 72 comandos do snapshot não mudou.
+
 ### DT32 — `--normalize-dates` lento em colunas com muitos valores distintos **(medido)**
 [clean.py:152-192](../src/datatool/clean.py#L152-L192), [inference.py](../src/datatool/inference.py)
 
 A normalização testa `strptime` em Python para cada valor distinto (e duas vezes em `date_formats_for`). Num CSV de 200 mil linhas com 70 mil datas distintas, `--normalize-dates` leva 2,8 s, contra 0,2–0,8 s das outras operações, e o custo cresce linearmente com os valores distintos.
 
 **Correção:** vetorizar com o polars (`str.to_date(formato, strict=False)` por formato, combinados com `coalesce` na ordem de preferência), mantendo o pré-filtro, a preferência dd/mm e a exclusão de `yyyymmdd` (spec 009). Conferir o resultado contra a implementação atual antes de trocar.
+
+**Resolução:**
+- **Regex em vez de `str.to_date` direto:** o `to_date` do polars (chrono) não aceita exatamente o mesmo que o `strptime`. Ele aceita o ano 0, que o Python recusa, e tem outras regras de largura de campo e de ano com 2 dígitos. Por isso cada formato vira uma regex com as larguras e faixas do `strptime`: dia e mês com 1 ou 2 dígitos, `%Y` com 4, `%y` com 2, hora até 23, minuto e segundo até 59. Os campos extraídos formam um texto ISO, que o polars valida (31/02 não existe). O ano com 2 dígitos segue a regra do Python (00–68 → 20xx, 69–99 → 19xx), e o ano 0 é recusado.
+- `parse_dates` substitui `parse_date`/`date_formats_for` e decide a preferência dd/mm ou mm/dd com a mesma regra. O diagnóstico (`date_sample_shapes`) passa pelo mesmo caminho, então diagnóstico e correção continuam com uma fonte única de regras (DT07). O `strptime` saiu do código.
+- **Conferência com a implementação anterior:**
+  - Num corpus gerado de ~156 mil valores em 1.200 colunas, `parse_dates` deu o mesmo resultado em todos. O corpus cobre os 15 formatos, as duas preferências, datas inválidas, larguras de 1 a 4 dígitos, horas fora da faixa, espaços e lixo.
+  - As formas de data coincidiram em 3.000 amostras, 1.335 delas classificadas como coluna de datas.
+  - O `clean --normalize-dates` do CSV de 200 mil linhas gerou um arquivo idêntico byte a byte e o mesmo relatório. A saída dos 72 comandos do snapshot não mudou.
+- **Única diferença:** dígitos não ASCII ("١٢/٠١/٢٠٢٤"), que o `\d` do Python aceitava, deixam de ser reconhecidos como data.
+- **Tempo:** `--normalize-dates` no CSV de 200 mil linhas (70 mil datas distintas) foi de 2,8 s para 0,4 s. O `info` e o diagnóstico do `clean` ficaram iguais (0,60 s e 0,40 s).
+- **Testes:** `tests/test_date_inference.py` (28 testes) mantém a regra original como oráculo de referência e compara as duas implementações num corpus fixo, mais 21 casos de borda explícitos. Verificado com mutações: mudar o corte do ano com 2 dígitos, aceitar o ano 0 ou aceitar o segundo 60 faz testes falharem.
 
 ### DT33 — Log do MCP registra "exit code 0" quando a ferramenta falha
 [execution_log.py:130-163](../src/datatool/execution_log.py#L130-L163), [mcp_server.py:106-117](../src/datatool/mcp_server.py#L106-L117)
@@ -393,18 +413,117 @@ As ferramentas MCP devolvem erro como `CallToolResult(is_error=True)`, sem levan
 
 **Correção:** o `logged` lê o exit code de um jeito que não dependa do typer (ex.: um `ContextVar`/atributo que `_run_tool` e `_fail` preenchem, ou uma exceção própria). O MCP passa a registrar o exit code real.
 
+**Resolução:**
+- A execução corrente (já num `ContextVar`) guarda o exit code. `set_exit_code` o informa para quem sinaliza falha sem exceção: o `_error_result` do servidor MCP, por onde passam os erros de comando e de sandbox.
+- Do lado do CLI, o `logged` lê o exit code de qualquer exceção com atributo `exit_code` (o `typer.Exit`, um `CommandError`). As demais exceções continuam sendo erro inesperado: exit code 1, com traceback.
+- O `execution_log` não importa mais o typer. O servidor MCP e o log importam sem ele, o que é verificado por um teste.
+- Testes: sucesso no MCP registra 0; arquivo inexistente e violação do sandbox registram 2; falha de leitura registra 1. Os de falha registravam 0 antes. Os testes de exit code do CLI (0, 1 e 2) continuam passando.
+- Continua igual: um erro de sandbox não gera linha `ERROR` no log, porque só o `error_document` dos erros de comando faz isso. A linha final agora mostra o exit code 2.
+
 ### DT34 — Código morto: `print_json`
 [reporting.py:61](../src/datatool/reporting.py#L61)
 
 `print_json` não é chamada por nenhum módulo desde o DT08, e a docstring de `build_document` ainda diz que ela é "usada pelo CLI". Remover a função e corrigir a docstring.
 
+**Resolução:** removida. A docstring de `build_document` e as notas de implementação das specs 019 e 020 passam a citar `build_document`/`print_document`.
+
 ### DT35 — Lacunas de teste
 - `datatool --version` (DT18) não tem teste.
 - Nenhum teste sobe o `datatool-mcp` de verdade: todos chamam o servidor em processo (`server.call_tool`). Uma regressão no entry point (`mcp_cli`), no transporte stdio ou algo escrevendo no stdout do processo passaria pela suíte. Um teste de fumaça que inicie o processo, faça o `initialize` e chame uma ferramenta pelo stdio cobriria isso.
 
+**Resolução:**
+- `tests/test_version.py`: `datatool --version` imprime `datatool <versão do pacote instalado>` com exit 0, e responde antes de validar o subcomando.
+- `TestStdioServer` sobe o script `datatool-mcp` instalado, com `--root` num diretório temporário, e conversa com o cliente stdio do próprio SDK. Ele faz o `initialize`, lista as 5 ferramentas, chama o `datatool_info` e confere que o log ficou em `<root>/logs`.
+- O cliente do SDK tolera linhas que não são JSON-RPC no stdout, então o teste coleta essas falhas pelo `message_handler` e exige que não haja nenhuma. Verificado com mutações: um `print(..., flush=True)` no entry point faz o teste falhar, e trocar o transporte faz o teste falhar por tempo esgotado.
+- Um `print` sem flush dentro de uma ferramenta fica no buffer até o processo terminar e não chega ao cliente durante a sessão. Esse caso continua coberto pelo teste em processo com `capsys`.
+
 ### DT36 — Site e índice das specs desatualizados
 - [website/index.html](../website/index.html): o exemplo de `--format json` não tem `count_unit` (DT20), e a instalação indicada é `pip install -e .` (clonar o repositório), sem mencionar o `pip install datatool-cli` que o README já traz.
 - [specs/README.md](README.md) não aponta este arquivo; a lista de débitos só é encontrada por quem já sabe que ela existe.
+
+**Resolução:**
+- **Site:** o exemplo de `--format json` é a saída real de hoje: `file` com `format`/`size_bytes`, e o problema com `count_unit`/`message`, abreviado com "…". O exemplo em texto também estava desatualizado: dizia 5 formatos de data em vez de 4, e faltavam a linha de CPF e duas sugestões. Também foram corrigidos os números (testes e specs) e a lista de formatos do `convert` (faltavam Feather e Avro).
+- **Instalação:** o pacote **ainda não está no PyPI** (a consulta à API do PyPI devolve 404, e não há tag de release). O site continua indicando a instalação pelo código-fonte e passa a dizer que, a partir da primeira release, bastará `pip install datatool-cli`, como o README.
+- **Specs:** [specs/README.md](README.md) aponta este arquivo, na seção "Além das specs".
+
+## Pendências da implementação (2026-09-30)
+
+Não vêm de uma revisão nova. São sobras anotadas enquanto DT14, DT15, DT28, DT31, DT33, DT35 e DT36 eram implementados: limitações aceitas na hora, decisões adiadas e pontos que ficaram fora do escopo de cada item.
+
+| ID | Item | Área | Severidade | Esforço |
+|----|------|------|------------|---------|
+| DT37 | Erro de sandbox do MCP não diz o motivo no log | Log/MCP | Baixa | P |
+| DT38 | Parâmetro `columns` do `datatool_clean_apply` com o nome antigo | MCP | Baixa | P |
+| DT39 | Números do site escritos à mão | Docs | Baixa | P |
+| DT40 | CI só em Linux | CI/Testes | Baixa | P |
+| DT41 | SQLite: fuso, nanossegundos e memória na leitura | IO | Baixa | M |
+| DT42 | Custo de inferir os tipos com o arquivo inteiro | Performance | Baixa | M |
+| DT43 | Mensagens em inglês do typer/click e do polars | UX | Baixa | M |
+
+### DT37 — Erro de sandbox do MCP não diz o motivo no log
+[mcp_server.py:105](../src/datatool/mcp_server.py#L105), [reporting.py:67](../src/datatool/reporting.py#L67)
+
+Os erros de comando passam por `error_document`, que grava a mensagem no log em nível `ERROR`. Os de sandbox (caminho fora da raiz, destino igual à entrada, destino existente sem `overwrite=true`) passam por `_sandbox_error_result`, que monta o documento com `build_error` e não grava nada. Desde o DT33 a linha final mostra `exit code 2`, mas quem lê o log não sabe por quê.
+
+**Correção:** `_sandbox_error_result` passa pelo mesmo `error_document`, com um `CommandError(mensagem, 2)`. As mensagens de sandbox têm só caminhos, nenhum valor de célula, então a regra de privacidade do log continua valendo. Testar que a linha `ERROR` aparece para cada um dos três casos.
+
+### DT38 — Parâmetro `columns` do `datatool_clean_apply` com o nome antigo
+[mcp_server.py:262](../src/datatool/mcp_server.py#L262)
+
+No DT15, a opção `--columns` do `clean` virou `--drop-null-columns` no CLI (com `--columns` aceito como alias). O servidor MCP manteve `columns`, para não quebrar clientes. Para um agente, `columns` sugere "as colunas em que as operações atuam", mas o parâmetro só vale para `drop_null`. É o tipo de ambiguidade que leva um modelo a passar o argumento errado.
+
+**Correção:** aceitar `drop_null_columns`, manter `columns` como alias obsoleto (dito na descrição da ferramenta) e recusar os dois juntos com erro. Remover o alias numa versão futura, anotada no changelog.
+
+### DT39 — Números do site escritos à mão
+[website/index.html:530](../website/index.html#L530)
+
+O site mostra "311 testes automatizados" e "21 specs públicas", digitados no HTML. A contagem de testes já ficou desatualizada duas vezes (202 até o DT36, 283 até o DT32).
+
+**Correção:** tirar a contagem de testes do site, que muda a cada item e não diz muito a quem avalia a ferramenta, ou gerá-la no workflow `deploy-pages` (`pytest --collect-only -q`). O número de specs muda pouco e pode continuar fixo.
+
+### DT40 — CI só em Linux
+[.github/workflows/ci.yml](../.github/workflows/ci.yml)
+
+Todos os jobs rodam em `ubuntu-latest`. Nada verifica o comportamento em Windows e macOS:
+- o teste do `datatool-mcp` via stdio (DT35) monta o caminho do script ao lado do `sys.executable`. No Windows ele fica em `Scripts\datatool-mcp.exe`. O SDK do MCP tenta as extensões `.exe`/`.cmd` com `shutil.which`, então é provável que funcione, mas não foi verificado;
+- caminhos, fim de linha (`\r\n`) na escrita de CSV, e a pasta de log do `platformdirs`, que é diferente em cada sistema.
+
+É relevante para o público da ferramenta: CSV exportado do Excel em português (`;`, `cp1252`) costuma nascer no Windows.
+
+**Correção:** incluir `windows-latest` e `macos-latest` na matriz de pelo menos um job de testes (não precisa multiplicar pelas versões de Python).
+
+### DT41 — SQLite: fuso, nanossegundos e memória na leitura
+[files/sqlite.py](../src/datatool/files/sqlite.py)
+
+Limitações aceitas no DT31:
+- **Fuso:** data-hora com fuso volta em UTC, no mesmo instante. O SQLite guarda só o deslocamento (`-03:00`), e o nome do fuso (`America/Sao_Paulo`) se perde.
+- **Precisão:** data-hora sempre volta em microssegundos. Nanossegundos perdem os três últimos dígitos, e uma coluna em milissegundos volta com outro `time_unit`, o que muda o schema num parquet → db → parquet.
+- **Memória:** a leitura passa a tabela inteira por tuplas Python (`fetchall`), o que é lento e pesado para tabelas grandes. O `pl.read_database` foi avaliado e não ajuda, porque faz o mesmo por baixo.
+
+**Correção:**
+- **Precisão:** gravar com a quantidade de dígitos da unidade e ler com o `time_unit` correspondente.
+- **Fuso:** registrar o nome do fuso, por exemplo numa tabela auxiliar de metadados, ou aceitar e só documentar.
+- **Memória:** ler em blocos (`fetchmany`) e concatenar, o que reduz o pico mas não o tempo, ou oferecer um leitor opcional via connectorx/ADBC, com dependência extra.
+
+### DT42 — Custo de inferir os tipos com o arquivo inteiro
+[files/__init__.py](../src/datatool/files/__init__.py), [files/csv.py](../src/datatool/files/csv.py)
+
+Desde o DT28, CSV, JSON, JSONL e Excel inferem os tipos com o arquivo inteiro (`infer_schema_length=None`). O `info` num CSV de 200 mil linhas foi de ~0,48 s para ~0,59 s, e o custo cresce linearmente com o tamanho do arquivo.
+
+**Correção proposta no DT28:** ler primeiro com a amostragem padrão e reler por inteiro só quando a leitura falhar. **Atenção:** uma leitura por amostragem que dá certo não garante os mesmos tipos. Uma coluna vazia nas primeiras 100 linhas e numérica depois é lida como texto, sem erro, enquanto a leitura completa a lê como número. A otimização precisa detectar esse caso (ex.: reler quando alguma coluna vier só com nulos na amostra) e ser conferida contra a leitura completa, como no DT32. O Excel continua lendo tudo, porque nele o valor vira nulo em silêncio em vez de dar erro.
+
+### DT43 — Mensagens em inglês do typer/click e do polars
+[main.py](../src/datatool/main.py)
+
+Pendência aceita no DT14: toda saída própria da ferramenta está em pt-BR, mas ficam em inglês:
+- os erros de uso do typer/click ("Missing argument", "No such option", "Invalid value for '--format'");
+- o texto de erro do polars que entra nas mensagens de leitura (ex.: `Não foi possível ler x.csv como csv: could not parse 'N/D' as dtype i64`).
+
+**Correção:**
+- **typer/click:** os erros de uso passam pelo `gettext` do click, e um catálogo pt-BR resolveria sem mexer no framework. É preciso manter o catálogo quando o click mudar as mensagens.
+- **polars:** traduzir os casos mais comuns (tipo incompatível, encoding, JSON malformado) com uma frase em pt-BR antes do texto original, que continua útil para diagnóstico.
+
+Prioridade baixa: afeta quem digita a opção errada, não o resultado dos comandos.
 
 ---
 
@@ -414,4 +533,5 @@ As ferramentas MCP devolvem erro como `CallToolResult(is_error=True)`, sem levan
 2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13, e depois DT04 e DT19.~~ Feito.
 3. ~~**Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.~~ Feito.
 4. ~~**Higiene contínua:** DT16, DT18, DT24, DT25, DT26.~~ Feito.
-5. **Segunda revisão:** DT28 primeiro (um arquivo sujo não abrir, ou perder valores em silêncio, contradiz o propósito da ferramenta), depois DT29 e DT30 (rápidos, e evitam resultado enganoso), e então DT31, DT33, DT34, DT35, DT36 e DT32.
+5. **Segunda revisão:** DT28 primeiro (um arquivo sujo não abrir, ou perder valores em silêncio, contradiz o propósito da ferramenta), depois DT29 e DT30 (rápidos, e evitam resultado enganoso), e então DT31, DT33, DT34, DT35, DT36 e DT32. Feito.
+6. **Pendências da implementação:** DT37 e DT38 primeiro (rápidos, e melhoram o que o agente e quem lê o log enxergam), depois DT40 (confiança no público do Windows) e DT39. DT42 só se a lentidão incomodar, e com conferência contra a leitura completa. DT41 e DT43 quando houver demanda.

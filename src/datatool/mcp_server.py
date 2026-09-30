@@ -18,7 +18,7 @@ from . import clean as clean_command
 from . import convert as convert_command
 from . import info as info_command
 from . import profiler as profile_command
-from .execution_log import logged
+from .execution_log import logged, set_exit_code
 from .files import FileType
 from .reporting import CommandError, build_error, error_document
 
@@ -92,6 +92,9 @@ def _summarize(document):
 
 
 def _error_result(document):
+    # A ferramenta devolve o erro em vez de levantar exceção; o log registra o
+    # exit code por aqui.
+    set_exit_code(document["error"]["exit_code"])
     return CallToolResult(
         content=[TextContent(type="text", text=document["error"]["message"])],
         structured_content=document,

@@ -1,5 +1,6 @@
 import asyncio
 import os
+import subprocess
 import sys
 
 import pytest
@@ -418,6 +419,52 @@ class TestExecutionLog:
             assert "São Paulo" not in log
             assert "Curitiba" not in log
 
+    def test_success_is_logged_with_exit_code_0(self):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n")
+
+            _call(mcp_server.build_server("."), "datatool_info", filename="dados.csv")
+
+            with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
+                last_line = f.read().splitlines()[-1]
+            assert "mcp info: fim — exit code 0" in last_line
+
+    @pytest.mark.parametrize(
+        ("filename", "exit_code"),
+        [
+            ("naoexiste.csv", 2),  # CommandError
+            ("../fora.csv", 2),  # violação do sandbox
+            ("quebrado.json", 1),  # falha de leitura
+        ],
+    )
+    def test_failure_is_logged_with_the_real_exit_code(self, filename, exit_code):
+        with isolated_filesystem():
+            with open("quebrado.json", "w", encoding="utf8") as f:
+                f.write("{nao e json")
+
+            result = _call(
+                mcp_server.build_server("."), "datatool_info", filename=filename
+            )
+
+            assert result.structured_content["error"]["exit_code"] == exit_code
+            with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
+                last_line = f.read().splitlines()[-1]
+            assert f"mcp info: fim — exit code {exit_code}" in last_line
+
+
+class TestNoTyperDependency:
+    def test_server_imports_without_typer(self):
+        # O typer é do CLI; o servidor MCP e o log não podem depender dele.
+        code = (
+            "import sys; sys.modules['typer'] = None; "
+            "import datatool.mcp_server, datatool.execution_log"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code], capture_output=True, text=True
+        )
+        assert result.returncode == 0, result.stderr
+
 
 class TestMissingMcpDependency:
     def test_main_explains_how_to_install_the_extra(self, monkeypatch):
@@ -516,3 +563,56 @@ class TestMainLogDir:
 
         assert os.getcwd() == cwd
         assert execution_log._default_log_dir == tmp_path.resolve() / "logs"
+
+
+class TestStdioServer:
+    def test_real_process_answers_over_stdio(self, tmp_path):
+        # Os demais testes chamam o servidor em processo; este sobe o
+        # `datatool-mcp` instalado e conversa pelo stdio, como um cliente MCP
+        # de verdade: cobre o entry point, o transporte e o stdout limpo.
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        (tmp_path / "dados.csv").write_text("nome\nAna\nAna\n", encoding="utf-8")
+        script = os.path.join(os.path.dirname(sys.executable), "datatool-mcp")
+        params = StdioServerParameters(command=script, args=["--root", str(tmp_path)])
+
+        # Uma linha que não é JSON-RPC no stdout não derruba o cliente, que só
+        # a repassa ao `message_handler` como exceção.
+        transport_errors = []
+
+        async def on_message(message):
+            if isinstance(message, Exception):
+                transport_errors.append(message)
+
+        async def session_calls():
+            async with (
+                stdio_client(params) as (read, write),
+                ClientSession(read, write, message_handler=on_message) as session,
+            ):
+                await session.initialize()
+                tools = await session.list_tools()
+                result = await session.call_tool(
+                    "datatool_info", {"filename": "dados.csv"}
+                )
+                return tools, result
+
+        tools, result = asyncio.run(asyncio.wait_for(session_calls(), timeout=60))
+
+        assert transport_errors == []
+
+        assert {tool.name for tool in tools.tools} == {
+            "datatool_info",
+            "datatool_profile",
+            "datatool_clean_diagnose",
+            "datatool_clean_apply",
+            "datatool_convert",
+        }
+        assert result.is_error is False
+        assert result.structured_content["command"] == "info"
+        assert any(
+            p["category"] == "duplicates" for p in result.structured_content["problems"]
+        )
+        # Sem DATATOOL_LOG_DIR no ambiente do processo, o log fica em <root>/logs.
+        log = (tmp_path / "logs" / "datatool.log").read_text(encoding="utf-8")
+        assert "mcp info: fim — exit code 0" in log
