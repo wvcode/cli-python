@@ -434,3 +434,33 @@ class TestCleanNormalizeDocuments:
                 "52998224725",
             ):
                 assert value not in log
+
+
+class TestDocumentColumnsType:
+    def test_document_columns_rejects_non_text_non_integer_column(self, runner):
+        # DT29: numa coluna decimal, `document_shape` chamava `.strip()` num
+        # float e o comando quebrava com traceback.
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,valor\nAna,1.5\nBia,2.5\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-documents",
+                    "masked",
+                    "--document-columns",
+                    "valor",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 2
+            assert result.exception is None or isinstance(result.exception, SystemExit)
+            assert (
+                "Coluna(s) em --document-columns que não são de texto nem de "
+                "inteiros: valor" in result.stdout
+            )
+            assert not os.path.exists("saida.csv")

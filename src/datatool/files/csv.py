@@ -86,4 +86,10 @@ def read_csv(filename, sep=None, encoding=None):
     # "utf8" usa o leitor nativo do polars; outros encodings são decodificados
     # em Python pelo próprio polars.
     polars_encoding = "utf8" if codecs.lookup(encoding).name == "utf-8" else encoding
-    return pl.read_csv(filename, separator=separator, encoding=polars_encoding)
+    # Tipos inferidos com o arquivo inteiro (ver o comentário de _READERS).
+    return pl.read_csv(
+        filename,
+        separator=separator,
+        encoding=polars_encoding,
+        infer_schema_length=None,
+    )

@@ -6,6 +6,8 @@ Itens marcados com **(reproduzido)** foram confirmados executando o CLI. Feature
 
 Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = resolvido · ◐ = resolvido em parte (ver a nota "Resolução" no item).
 
+Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles.
+
 ## Resumo
 
 | ID | Item | Área | Severidade | Esforço |
@@ -309,9 +311,107 @@ Quase nenhuma função tem anotação de tipo, e o ruff seleciona só `E, F, I`.
 
 ---
 
+## Segunda revisão (2026-09-30)
+
+Revisão do código depois da resolução de DT01–DT27 (commit `b37d80a`). Estado de partida: 231 testes passando, cobertura de 97,7%, ruff e pyright limpos. Os itens abaixo foram encontrados lendo o código e exercitando casos de borda que a suíte não cobria.
+
+| ID | Item | Área | Severidade | Esforço |
+|----|------|------|------------|---------|
+| DT28 ✅ | Valor fora do padrão depois das primeiras linhas: arquivo não abre (CSV/JSON/JSONL) ou vira nulo em silêncio (Excel) | IO | Alta | P |
+| DT29 ✅ | `--normalize-documents --document-columns` em coluna não textual quebra com traceback | clean | Média | P |
+| DT30 ✅ | Opções de parâmetro do `clean` ignoradas em silêncio | clean | Média | P |
+| DT31 | SQLite perde tipos na ida e volta e não abre colunas com tipos mistos | IO | Média | M |
+| DT32 | `--normalize-dates` lento em colunas com muitos valores distintos | Performance | Baixa | M |
+| DT33 | Log do MCP registra "exit code 0" quando a ferramenta falha | Log/MCP | Baixa | P |
+| DT34 | Código morto: `print_json` | Legibilidade | Baixa | P |
+| DT35 | Lacunas de teste: `--version` e o `datatool-mcp` de verdade (stdio) | Testes | Baixa | P |
+| DT36 | Site e índice das specs desatualizados | Docs | Baixa | P |
+
+### DT28 — Valor fora do padrão depois das primeiras linhas **(reproduzido)**
+[files/__init__.py](../src/datatool/files/__init__.py), [files/csv.py:89](../src/datatool/files/csv.py#L89)
+
+O polars infere o tipo de cada coluna só pelas primeiras linhas (100 no CSV, no JSON e no JSONL; 1.000 no Excel, via fastexcel). Um "N/D" numa coluna numérica depois disso, justamente o tipo de sujeira que a ferramenta existe para achar, causa:
+- **CSV, JSON, JSONL:** o arquivo não abre em nenhum comando (`info`, `profile`, `clean`, `convert`). Ex.: `idade` com 150 números e um "N/D" na linha 151 → `Não foi possível ler tardio.csv como csv: could not parse 'N/D' as dtype i64`.
+- **Excel:** pior, sem erro. O valor vira **nulo em silêncio** (uma planilha de 1.500 linhas com "N/D" na linha 1.501 é lida como `idade = null`). Um `convert` de xlsx para csv perde o valor sem avisar, e o `info` o contaria como nulo, não como texto numa coluna numérica.
+
+**Correção:** inferir os tipos com o arquivo inteiro. No CSV/JSON/JSONL, `infer_schema_length=None`; no Excel, a opção equivalente do fastexcel (`schema_sample_rows`/`infer_schema_length`). No CSV de 200 mil linhas, a leitura foi de 0,08 s para 0,12 s. A coluna passa a ser lida como texto, o `info` aponta "armazenada como texto mas parece numérica", e o `clean --fix-types` converte, exatamente o fluxo que a ferramenta propõe. Acrescentar testes com a anomalia depois da linha 100 (e da 1.000, no Excel) para cada formato.
+
+**Resolução:**
+- `read_csv`, `read_json`, `read_ndjson` e `read_excel` passam `infer_schema_length=None` (em `files/`).
+- `tests/test_schema_inference.py` cobre os quatro formatos com a anomalia logo depois do limite de amostragem: o arquivo abre, o `info` aponta a coluna como número em texto, o `convert` preserva o `N/D` e o `clean --fix-types` converte e reporta o valor que não converteu. Os 12 testes falham com a leitura anterior e passam com a nova; a saída dos 72 comandos do snapshot não mudou.
+- **Mínimo do polars subiu para 1.27.1** (era 1.0). O job de versões mínimas mostrou que, lendo o arquivo inteiro, o polars de 1.3 a 1.26 transforma em **nulo** os números de uma coluna JSONL que também tem texto, a mesma perda silenciosa que este item corrige; antes da 1.3, o `read_ndjson` nem aceita `infer_schema_length`. A suíte inteira passa com o polars 1.27.1 no Python 3.10.
+- **Custo:** a leitura de um CSV de 200 mil linhas e 10 colunas foi de ~0,007 s para ~0,11 s, e o `info` nesse arquivo de ~0,48 s para ~0,59 s. O custo cresce linearmente com o tamanho. Se virar problema, dá para ler primeiro com a amostragem padrão e só reler por inteiro quando a leitura falhar. Isso vale para CSV/JSON/JSONL, que dão erro; o Excel, que zera em silêncio, precisa continuar lendo tudo.
+- O SQLite tem o mesmo tipo de problema, na montagem do DataFrame, e continua no DT31.
+
+### DT29 — `--document-columns` em coluna não textual **(reproduzido)**
+[clean.py:104-121](../src/datatool/clean.py#L104-L121)
+
+`--normalize-dates --date-columns` recusa colunas que não são texto, mas `--normalize-documents --document-columns` não faz essa checagem: numa coluna `Float64`, `document_shape` chama `value.strip()` num `float` e o comando termina com `AttributeError` e traceback.
+
+**Correção:** aceitar só colunas de texto ou inteiras (o que `document_columns` já detecta) e recusar as demais com `CommandError` (exit 2), como em `--date-columns`.
+
+**Resolução:** feito em `_apply_normalize_documents`: `Coluna(s) em --document-columns que não são de texto nem de inteiros: valor` (exit 2), sem traceback e sem gravar nada. O teste `TestDocumentColumnsType` falha na versão anterior.
+
+### DT30 — Opções de parâmetro do `clean` ignoradas em silêncio **(reproduzido)**
+[clean.py:35-63](../src/datatool/clean.py#L35-L63), [main.py](../src/datatool/main.py)
+
+Opções que só configuram uma operação não fazem nada sem ela, e o comando não avisa:
+- `--key` sem `--remove-duplicates`, `--drop-null-columns` sem `--drop-null`, `--document-columns` sem `--normalize-documents`, `--date-columns` sem `--normalize-dates`, `--decimal-separator` sem `--fix-types`;
+- `--output` (e `--overwrite`) sem nenhuma operação: o comando faz só o diagnóstico e **não grava nada**, com exit 0. Ex.: `clean d.csv --date-columns data --output out.csv` imprime "Nenhum problema encontrado." e `out.csv` não existe. Quem esqueceu `--normalize-dates` acha que o arquivo foi gerado.
+
+O servidor MCP já recusa `datatool_clean_apply` sem operação; o CLI não.
+
+**Correção:** validar em `CleanOptions` (um método que lista parâmetros sem a operação correspondente) e falhar com exit 2 e mensagem clara ("--date-columns só tem efeito com --normalize-dates"). Para `--output` sem operação, o mesmo erro do MCP.
+
+**Resolução:**
+- `CleanOptions.validate()` reúne as regras de combinação: a exclusão mútua de `--lowercase`/`--uppercase`/`--normalize-case`, que já existia, e os parâmetros sem a operação (`_PARAMETER_OPERATIONS`, com os nomes das flags derivados dos campos). Todos os problemas saem numa mensagem só (ex.: `--key só tem efeito com --remove-duplicates; --date-columns só tem efeito com --normalize-dates.`), com exit 2, antes de ler o arquivo.
+- A validação roda em `apply_operations`, o que vale para o CLI e para o `datatool_clean_apply`, e também no modo diagnóstico do CLI.
+- No CLI, `--output`/`--overwrite` sem operação e `--overwrite` sem `--output` são erro. No `convert`, `--overwrite` sem `TO_FILENAME` também, porque era o mesmo tipo de opção ignorada em silêncio.
+- 14 testes novos (CLI, JSON e MCP) falham na versão anterior; um caso positivo confirma que o parâmetro junto com a sua operação continua funcionando. A saída dos 72 comandos do snapshot não mudou.
+- **Quebra de compatibilidade:** scripts que passavam uma dessas opções sem efeito passam a falhar com exit 2, e a mensagem diz o que falta.
+
+### DT31 — SQLite: tipos perdidos e inferência pelas primeiras linhas **(reproduzido)**
+[files/sqlite.py](../src/datatool/files/sqlite.py)
+
+- **Ida e volta perde tipos:** `Boolean` vai como `INTEGER` e volta como `Int64`; `Date`/`Datetime` vão como texto ISO e voltam como `String`. Um `convert` parquet → db → parquet muda o schema.
+- **Tipos mistos não abrem:** `read_sqlite` monta o DataFrame com `pl.DataFrame(rows, orient="row")`, que infere pelas primeiras 100 linhas; uma coluna com inteiros e um texto na linha 151 (o SQLite aceita, pela tipagem dinâmica) faz a leitura falhar.
+- Carrega todas as linhas em tuplas Python (`fetchall`), o que é lento e pesado para tabelas grandes.
+
+**Correção:** na gravação, declarar `BOOLEAN`, `DATE` e `TIMESTAMP` conforme o dtype. Na leitura, usar o tipo declarado (`PRAGMA table_info`) para converter de volta e `infer_schema_length=None` (ou ler colunas de tipo misto como texto). Avaliar `pl.read_database` com o cursor, para não passar por tuplas Python.
+
+### DT32 — `--normalize-dates` lento em colunas com muitos valores distintos **(medido)**
+[clean.py:152-192](../src/datatool/clean.py#L152-L192), [inference.py](../src/datatool/inference.py)
+
+A normalização testa `strptime` em Python para cada valor distinto (e duas vezes em `date_formats_for`). Num CSV de 200 mil linhas com 70 mil datas distintas, `--normalize-dates` leva 2,8 s, contra 0,2–0,8 s das outras operações, e o custo cresce linearmente com os valores distintos.
+
+**Correção:** vetorizar com o polars (`str.to_date(formato, strict=False)` por formato, combinados com `coalesce` na ordem de preferência), mantendo o pré-filtro, a preferência dd/mm e a exclusão de `yyyymmdd` (spec 009). Conferir o resultado contra a implementação atual antes de trocar.
+
+### DT33 — Log do MCP registra "exit code 0" quando a ferramenta falha
+[execution_log.py:130-163](../src/datatool/execution_log.py#L130-L163), [mcp_server.py:106-117](../src/datatool/mcp_server.py#L106-L117)
+
+As ferramentas MCP devolvem erro como `CallToolResult(is_error=True)`, sem levantar exceção, então o `@logged` sempre registra `fim — exit code 0`. A spec 020 aceitou isso como limitação quando cada ferramenta montava o próprio resultado; hoje todas passam por `_run_tool`, que conhece o `exit_code` do `CommandError`. Além disso, `execution_log` depende de `typer.Exit` para saber o exit code, o que acopla o log ao framework do CLI.
+
+**Correção:** o `logged` lê o exit code de um jeito que não dependa do typer (ex.: um `ContextVar`/atributo que `_run_tool` e `_fail` preenchem, ou uma exceção própria). O MCP passa a registrar o exit code real.
+
+### DT34 — Código morto: `print_json`
+[reporting.py:61](../src/datatool/reporting.py#L61)
+
+`print_json` não é chamada por nenhum módulo desde o DT08, e a docstring de `build_document` ainda diz que ela é "usada pelo CLI". Remover a função e corrigir a docstring.
+
+### DT35 — Lacunas de teste
+- `datatool --version` (DT18) não tem teste.
+- Nenhum teste sobe o `datatool-mcp` de verdade: todos chamam o servidor em processo (`server.call_tool`). Uma regressão no entry point (`mcp_cli`), no transporte stdio ou algo escrevendo no stdout do processo passaria pela suíte. Um teste de fumaça que inicie o processo, faça o `initialize` e chame uma ferramenta pelo stdio cobriria isso.
+
+### DT36 — Site e índice das specs desatualizados
+- [website/index.html](../website/index.html): o exemplo de `--format json` não tem `count_unit` (DT20), e a instalação indicada é `pip install -e .` (clonar o repositório), sem mencionar o `pip install datatool-cli` que o README já traz.
+- [specs/README.md](README.md) não aponta este arquivo; a lista de débitos só é encontrada por quem já sabe que ela existe.
+
+---
+
 ## Ordem sugerida
 
 1. ~~**Rápidos e de alto impacto:** DT02, DT03, DT01, DT05, DT06, DT14, DT15, DT17, DT27.~~ Feito (DT14 em parte).
 2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13, e depois DT04 e DT19.~~ Feito.
 3. ~~**Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.~~ Feito.
 4. ~~**Higiene contínua:** DT16, DT18, DT24, DT25, DT26.~~ Feito.
+5. **Segunda revisão:** DT28 primeiro (um arquivo sujo não abrir, ou perder valores em silêncio, contradiz o propósito da ferramenta), depois DT29 e DT30 (rápidos, e evitam resultado enganoso), e então DT31, DT33, DT34, DT35, DT36 e DT32.

@@ -783,3 +783,122 @@ class TestCleanColumns:
             assert result.exit_code != 0
             assert message in result.stdout
             assert not os.path.exists("saida.csv")
+
+
+class TestCleanOptionValidation:
+    # DT30: parâmetros sem a operação que eles configuram eram ignorados em
+    # silêncio, e o comando parecia ter feito o que foi pedido.
+    @pytest.mark.parametrize(
+        "args, message",
+        [
+            (
+                ["--trim", "--key", "nome"],
+                "--key só tem efeito com --remove-duplicates",
+            ),
+            (
+                ["--trim", "--drop-null-columns", "nome"],
+                "--drop-null-columns só tem efeito com --drop-null",
+            ),
+            (
+                ["--trim", "--columns", "nome"],
+                "--drop-null-columns só tem efeito com --drop-null",
+            ),
+            (
+                ["--trim", "--document-columns", "nome"],
+                "--document-columns só tem efeito com --normalize-documents",
+            ),
+            (
+                ["--trim", "--date-columns", "data"],
+                "--date-columns só tem efeito com --normalize-dates",
+            ),
+            (
+                ["--trim", "--decimal-separator", ","],
+                "--decimal-separator só tem efeito com --fix-types",
+            ),
+            # Sem nenhuma operação (modo diagnóstico) também é erro.
+            (["--date-columns", "data"], "--date-columns só tem efeito com"),
+            (["--trim", "--overwrite"], "--overwrite só tem efeito com --output"),
+        ],
+    )
+    def test_parameter_without_its_operation_is_an_error(self, runner, args, message):
+        with isolated_filesystem() as tmp_dir:
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,data\nAna,01/02/2024\n")
+
+            result = runner.invoke(app, ["clean", "dados.csv", *args])
+            assert result.exit_code == 2
+            assert message in result.stdout
+            assert sorted(os.listdir(tmp_dir)) == ["dados.csv", "logs"]
+
+    def test_several_unused_parameters_are_reported_together(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome\nAna\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--trim",
+                    "--key",
+                    "nome",
+                    "--date-columns",
+                    "x",
+                ],
+            )
+            assert result.exit_code == 2
+            assert (
+                "--key só tem efeito com --remove-duplicates; "
+                "--date-columns só tem efeito com --normalize-dates." in result.stdout
+            )
+
+    @pytest.mark.parametrize("output_format", ["text", "json"])
+    def test_output_without_operation_is_an_error(self, runner, output_format):
+        # Antes: só o diagnóstico, exit 0, e o arquivo de --output não existia.
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,data\nAna,01/02/2024\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--output",
+                    "saida.csv",
+                    "--format",
+                    output_format,
+                ],
+            )
+            assert result.exit_code == 2
+            assert "--output/--overwrite só têm efeito com pelo menos uma" in (
+                result.stdout
+            )
+            if output_format == "json":
+                assert json.loads(result.stdout)["status"] == "error"
+            assert not os.path.exists("saida.csv")
+
+    def test_parameter_with_its_operation_still_works(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,data\nAna,01/02/2024\nAna,01/02/2024\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--normalize-dates",
+                    "--date-columns",
+                    "data",
+                    "--remove-duplicates",
+                    "--key",
+                    "nome",
+                    "--output",
+                    "saida.csv",
+                ],
+            )
+            assert result.exit_code == 0, result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,data\nAna,2024-02-01\n"

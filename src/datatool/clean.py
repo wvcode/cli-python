@@ -31,6 +31,19 @@ from .reporting import CommandError, build_document
 
 _UNRECOGNIZED_LIMIT = 10
 
+# Campos de `CleanOptions` que só configuram uma operação → essa operação.
+_PARAMETER_OPERATIONS = {
+    "key": "remove_duplicates",
+    "drop_null_columns": "drop_null",
+    "document_columns": "normalize_documents",
+    "date_columns": "normalize_dates",
+    "decimal_separator": "fix_types",
+}
+
+
+def _flag(field_name):
+    return "--" + field_name.replace("_", "-")
+
 
 @dataclass(frozen=True)
 class CleanOptions:
@@ -61,6 +74,24 @@ class CleanOptions:
             for operations in _OPERATION_PHASES
             for operation in operations
         )
+
+    def validate(self):
+        """Levanta `CommandError` para combinações de opções sem sentido, antes
+        de ler o arquivo: operações que se excluem e parâmetros cuja operação
+        não foi pedida (ignorá-los em silêncio dava um resultado enganoso)."""
+        if sum((self.lowercase, self.uppercase, self.normalize_case)) > 1:
+            raise CommandError(
+                "--lowercase, --uppercase e --normalize-case não podem ser usadas "
+                "juntas",
+                2,
+            )
+        unused = [
+            f"{_flag(parameter)} só tem efeito com {_flag(operation)}"
+            for parameter, operation in _PARAMETER_OPERATIONS.items()
+            if getattr(self, parameter) and not getattr(self, operation)
+        ]
+        if unused:
+            raise CommandError("; ".join(unused) + ".", 2)
 
 
 CleanDiagnosis = namedtuple("CleanDiagnosis", ["input", "findings"])
@@ -103,6 +134,19 @@ def _apply_normalize_documents(df, options):
 
     if options.document_columns:
         columns = resolve_columns(df, options.document_columns, "--document-columns")
+        # Como em `document_columns`: CPF/CNPJ vêm em texto ou, quando o arquivo
+        # os leu como número, em inteiros; outros tipos não têm como ser.
+        invalid_columns = [
+            column
+            for column in columns
+            if df[column].dtype != pl.Utf8 and not df[column].dtype.is_integer()
+        ]
+        if invalid_columns:
+            raise CommandError(
+                "Coluna(s) em --document-columns que não são de texto nem de "
+                f"inteiros: {', '.join(invalid_columns)}",
+                2,
+            )
     else:
         columns = document_columns(df)
 
@@ -672,11 +716,9 @@ def apply_operations(
     Levanta `CommandError` em entrada, opção ou saída inválida — antes de gravar
     qualquer coisa.
     """
-    if sum((options.lowercase, options.uppercase, options.normalize_case)) > 1:
-        raise CommandError(
-            "--lowercase, --uppercase e --normalize-case não podem ser usadas juntas",
-            2,
-        )
+    options.validate()
+    if overwrite and output is None:
+        raise CommandError("--overwrite só tem efeito com --output.", 2)
 
     loaded = load_input(filename, sep, encoding)
 

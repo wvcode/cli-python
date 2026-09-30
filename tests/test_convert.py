@@ -253,3 +253,14 @@ class TestOutputHandling:
             assert document["status"] == "error"
             assert message in document["error"]["message"]
             assert not os.path.exists("saida.json")
+
+
+class TestConvertOptionValidation:
+    def test_overwrite_without_target_is_an_error(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("A\n1\n")
+
+            result = runner.invoke(app, ["convert", "dados.csv", "--overwrite"])
+            assert result.exit_code == 2
+            assert "--overwrite só tem efeito com TO_FILENAME" in result.stdout

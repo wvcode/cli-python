@@ -4,7 +4,7 @@
 Como analista/engenheiro de dados, eu quero converter um arquivo de um formato para outro, para poder usar o formato mais adequado em cada ferramenta ou pipeline.
 
 ## Contexto
-Implementado em [src/datatool/convert.py](../src/datatool/convert.py) e [src/datatool/files/](../src/datatool/files/__init__.py) (era `structures/functions.py` até o débito técnico DT23), usando polars para ler/gravar os formatos suportados. Além dos formatos pedidos na ideia (CSV, JSON, JSONL, Excel, Parquet, SQLite), a implementação também mantém Feather e Avro, que já existiam no código antes desta spec.
+Implementado em [src/datatool/convert.py](../src/datatool/convert.py) e [src/datatool/files/](../src/datatool/files/__init__.py) (era `structures/functions.py` até o débito técnico DT23). Desde o DT28, todos os leitores inferem os tipos com o arquivo inteiro (`infer_schema_length=None`), e não com as primeiras 100 linhas (1.000 no Excel), usando polars para ler/gravar os formatos suportados. Além dos formatos pedidos na ideia (CSV, JSON, JSONL, Excel, Parquet, SQLite), a implementação também mantém Feather e Avro, que já existiam no código antes desta spec.
 
 Leitura/gravação de SQLite usa o módulo `sqlite3` da stdlib (sem dependência extra): o nome da tabela é derivado do nome do arquivo (`vendas.sqlite` → tabela `vendas`); na leitura, se esse nome não existir mas o banco tiver exatamente uma tabela, essa tabela é usada. Excel usa `fastexcel`/`xlsxwriter` via polars (adicionados em `requirements.txt`/`setup.py`).
 

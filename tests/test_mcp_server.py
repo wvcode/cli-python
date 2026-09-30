@@ -155,6 +155,27 @@ class TestDatatoolCleanDiagnose:
 
 
 class TestDatatoolCleanApply:
+    def test_parameter_without_its_operation_is_an_error(self):
+        # DT30: a validação mora no domínio, então vale também para o MCP.
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("nome,data\nAna,01/02/2024\n")
+
+            result = _call(
+                mcp_server.build_server("."),
+                "datatool_clean_apply",
+                filename="dados.csv",
+                output="saida.csv",
+                trim=True,
+                date_columns="data",
+            )
+            assert result.is_error is True
+            assert result.structured_content["error"]["exit_code"] == 2
+            assert "--date-columns só tem efeito com --normalize-dates" in (
+                result.content[0].text
+            )
+            assert not os.path.exists("saida.csv")
+
     def test_happy_path(self):
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:

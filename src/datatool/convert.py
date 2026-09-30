@@ -25,6 +25,9 @@ def convert(
     Sem `to_filename`, só carrega (o CLI imprime o dataset em CSV). Com
     `reload_target`, relê o destino para conferir o shape gravado.
     """
+    if overwrite and to_filename is None:
+        raise CommandError("--overwrite só tem efeito com TO_FILENAME.", 2)
+
     loaded = load_input(
         filename, sep, encoding, file_type=from_type, type_option="--from-type"
     )

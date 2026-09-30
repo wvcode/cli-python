@@ -1,6 +1,7 @@
 """Leitura e gravação de arquivos em todos os formatos suportados."""
 
 import warnings
+from functools import partial
 
 import polars as pl
 
@@ -28,14 +29,21 @@ def _read_excel(filename):
         warnings.filterwarnings(
             "ignore", message=r"from_arrow\(", category=FutureWarning
         )
-        return pl.read_excel(filename)
+        return pl.read_excel(filename, infer_schema_length=None)
 
 
+# Todos os leitores inferem os tipos com o arquivo inteiro
+# (`infer_schema_length=None`), não com as primeiras linhas (padrão do polars:
+# 100; 1.000 no Excel). Senão, um "N/D" numa coluna numérica depois disso fazia
+# o arquivo não abrir (CSV/JSON/JSONL) ou virava nulo em silêncio (Excel) —
+# justamente a sujeira que o `info` existe para apontar. Lida por inteiro, a
+# coluna vira texto e o `clean --fix-types` a corrige.
+#
 # CSV fica de fora: é lido por `read_csv`, que também recebe sep/encoding.
 _READERS = {
     FileType.FEATHER: pl.read_ipc,
-    FileType.JSON: pl.read_json,
-    FileType.JSONL: pl.read_ndjson,
+    FileType.JSON: partial(pl.read_json, infer_schema_length=None),
+    FileType.JSONL: partial(pl.read_ndjson, infer_schema_length=None),
     FileType.XLSX: _read_excel,
     FileType.PARQUET: pl.read_parquet,
     FileType.AVRO: pl.read_avro,

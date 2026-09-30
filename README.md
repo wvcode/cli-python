@@ -58,6 +58,7 @@ datatool convert vendas.xlsx vendas.csv
 
 - Formatos suportados: **CSV, JSON, JSONL, Excel (xlsx), Parquet, SQLite**, além de Feather e Avro.
 - SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas.
+- Os tipos das colunas são inferidos com o arquivo inteiro, não só com as primeiras linhas: um valor como `N/D` numa coluna numérica, em qualquer posição, faz a coluna ser lida como texto (o `info` aponta e o `clean --fix-types` corrige), em vez de impedir a leitura ou virar nulo.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
 - Se `to_filename` for omitido, o dataset inteiro é impresso no stdout em CSV, pronto para pipe (`datatool convert vendas.xlsx | head`).
 - Se o destino já existir, o comando recusa (exit code 2) e não altera nada; use `--overwrite` para substituí-lo.
@@ -193,6 +194,8 @@ cidade
 Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes_sujos.csv](examples/clientes_sujos.csv).
 
 Com pelo menos uma flag de operação, o comando passa a transformar os dados (só em colunas de texto — colunas numéricas, por exemplo, não são alteradas) e mostra o resultado: grava em `--output arquivo` (formato inferido pela extensão, igual ao `convert`) ou, se omitido, imprime o dataset inteiro em CSV no stdout, com o relatório das operações no stderr. Nada é gravado por padrão, e um `--output` que já existe só é substituído com `--overwrite`.
+
+Opções que só configuram uma operação exigem essa operação: `--key` precisa de `--remove-duplicates`, `--drop-null-columns` de `--drop-null`, `--document-columns` de `--normalize-documents`, `--date-columns` de `--normalize-dates` e `--decimal-separator` de `--fix-types`. Sem ela, o comando falha (exit code 2) em vez de ignorar a opção. Pelo mesmo motivo, `--output`/`--overwrite` sem nenhuma operação é erro: sem operação, o `clean` só faz o diagnóstico e não grava nada.
 
 ```bash
 datatool clean clientes.csv --trim --normalize-case --output clientes_limpo.csv

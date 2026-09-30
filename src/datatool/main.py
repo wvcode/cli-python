@@ -345,6 +345,23 @@ def clean(
     )
 
     if not options.has_operations():
+        # Sem operação, o clean só diagnostica: um --output seria ignorado e
+        # quem o passou acharia que o arquivo foi gravado.
+        if output is not None or overwrite:
+            _fail(
+                "clean",
+                output_format,
+                CommandError(
+                    "--output/--overwrite só têm efeito com pelo menos uma "
+                    "operação de limpeza (ex.: --trim, --fix-types). Sem "
+                    "operação, o clean só faz o diagnóstico e não grava nada.",
+                    2,
+                ),
+            )
+        try:
+            options.validate()
+        except CommandError as error:
+            _fail("clean", output_format, error)
         _emit(
             "clean",
             output_format,
