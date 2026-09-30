@@ -21,7 +21,13 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Isso registra o comando `datatool` no ambiente virtual (instalação editável: alterações em `src/datatool/` refletem sem reinstalar). Para apenas rodar via módulo, sem instalar:
+Isso registra o comando `datatool` no ambiente virtual (instalação editável: alterações em `src/datatool/` refletem sem reinstalar). A partir da primeira release publicada, também dá para instalar direto do PyPI (o pacote se chama `datatool-cli`, mas o comando continua `datatool`):
+
+```bash
+pip install datatool-cli
+```
+
+Para apenas rodar via módulo, sem instalar:
 
 ```bash
 PYTHONPATH=src python -m datatool.main <comando> ...

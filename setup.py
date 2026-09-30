@@ -4,8 +4,8 @@ with open("README.md", "r", encoding="utf-8") as fhand:
     long_description = fhand.read()
 
 setuptools.setup(
-    name="datatool",
-    version="0.0.1",
+    name="datatool-cli",
+    version="0.1.0",
     author="WVCode",
     author_email="contato@wvcode.com.br",
     description=("Command line tool para ajudar na manipulação de dados."),
