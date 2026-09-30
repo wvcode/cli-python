@@ -123,10 +123,10 @@ O CLI não tem essa restrição: quem digita a URL no terminal é quem decidiu a
 - **Cache de downloads** e **leitura em streaming** sem baixar o arquivo inteiro. O arquivo continua carregado inteiro na memória, como os locais (ver [F12](backlog-novas-features.md#f12--arquivos-grandes-via-modo-lazystreaming)).
 - **Barra de progresso.** O stdout pode estar redirecionado (CSV do `convert` sem destino), e o stderr leva o relatório do `clean`. Uma barra de progresso fica para quando houver uma opção de verbosidade.
 
-## Questões em aberto
-Decisões desta spec que merecem confirmação antes da implementação:
-1. **Limite padrão de 500 MB.** Escolhido porque o arquivo inteiro vai para a memória depois do download. Um limite menor (100 MB) protege máquinas modestas; um maior evita que a pessoa precise da variável de ambiente para arquivos legítimos.
-2. **HTTP 404 com exit code 2.** Escolhido para bater com "arquivo local não existe" (2), de modo que scripts tratem os dois casos igual. A alternativa é tratar toda falha de download como 1 (falha de leitura).
+## Decisões confirmadas
+Confirmadas antes da implementação (2026-09-30):
+1. **Limite padrão de 500 MB.** O arquivo inteiro vai para a memória depois do download; 500 MB equilibra proteger máquinas modestas e não exigir a variável de ambiente para arquivos legítimos. Quem precisar de outro valor usa `DATATOOL_URL_MAX_MB`.
+2. **HTTP 404 e 410 com exit code 2.** Batem com "arquivo local não existe" (2), de modo que scripts tratem os dois casos igual. Os demais erros de download saem com 1 (falha de leitura).
 3. **`--from-type` nos quatro comandos.** Necessário para URLs sem extensão e sem `Content-Type` útil, e útil também para arquivos locais com extensão errada. Estende a interface de `info`, `profile` e `clean`.
 
 ## Dependências
