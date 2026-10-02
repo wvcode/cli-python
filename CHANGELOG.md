@@ -2,7 +2,7 @@
 
 As mudanças de cada versão do `datatool-cli`. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e as versões seguem o [versionamento semântico](https://semver.org/lang/pt-BR/).
 
-## [Não lançado]
+## [0.1.2] — 2026-09-30
 
 ### Adicionado
 
@@ -20,7 +20,7 @@ As mudanças de cada versão do `datatool-cli`. O formato segue o [Keep a Change
 
 - No PyPI, o link *Homepage* aponta para o [site](https://wvcode.github.io/cli-python/), e o GitHub aparece como *Repository*.
 
-## [0.1.0] — 2026-09-30
+## [0.1.1] — 2026-09-30
 
 Primeira versão publicada.
 
