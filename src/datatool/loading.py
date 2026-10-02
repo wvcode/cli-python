@@ -7,18 +7,36 @@ Tudo aqui levanta `CommandError` com a mensagem e o exit code finais, para que
 import os
 from collections import namedtuple
 
+import polars as pl
+
+from .execution_log import log
 from .files import (
     SUPPORTED_EXTENSIONS,
+    FileType,
     csv_options_error,
+    find_sheet,
     infer_file_type,
+    list_sheets,
     read_file,
     save_file,
 )
 from .reporting import CommandError, file_summary
 
 # `summary` é tirado na leitura: se a saída sobrescrever a entrada, o documento
-# JSON ainda descreve o arquivo que foi lido.
-LoadedInput = namedtuple("LoadedInput", ["filename", "file_type", "df", "summary"])
+# JSON ainda descreve o arquivo que foi lido. `sheet` é a aba lida (Excel), e
+# `decimal_separator`, a convenção do arquivo ("," num CSV separado por ";";
+# None quando cada coluna é detectada).
+LoadedInput = namedtuple(
+    "LoadedInput",
+    ["filename", "file_type", "df", "summary", "sheet", "decimal_separator"],
+    defaults=(None, None),
+)
+
+# Aba lida de uma planilha (spec 022). `position` começa em 1, como no Excel;
+# `explicit` diz se veio de --sheet.
+SheetSelection = namedtuple(
+    "SheetSelection", ["name", "position", "sheets", "explicit"]
+)
 
 
 def _resolve_file_type(filename, file_type, type_option):
@@ -38,7 +56,79 @@ def _resolve_file_type(filename, file_type, type_option):
     return file_type
 
 
-def load_input(filename, sep=None, encoding=None, file_type=None, type_option=None):
+def _sheet_names(sheets):
+    return ", ".join(
+        f"{sheet.name} (oculta)" if sheet.hidden else sheet.name for sheet in sheets
+    )
+
+
+def _read_excel_input(filename, sheet):
+    """Lê a aba pedida em `sheet` ou, sem ela, a primeira aba visível com
+    dados. Devolve o DataFrame e a `SheetSelection`."""
+    sheets = list_sheets(filename)
+    if sheet is not None:
+        index = find_sheet(sheets, sheet)
+        if index is None:
+            raise CommandError(
+                f'A aba "{sheet}" não existe em {filename}. '
+                f"Abas: {_sheet_names(sheets)}.",
+                2,
+            )
+        candidates = [index]
+    else:
+        candidates = [index for index, item in enumerate(sheets) if not item.hidden]
+
+    for index in candidates:
+        name = sheets[index].name
+        try:
+            df = read_file(FileType.XLSX, filename, sheet=name).df
+        except pl.exceptions.NoDataError:
+            if sheet is not None:
+                raise CommandError(
+                    f'A aba "{name}" de {filename} está vazia.', 1
+                ) from None
+            log.info("aba vazia, pulada: %s", name)
+            continue
+        log.info("aba lida: %s (%s de %s)", name, index + 1, len(sheets))
+        return df, SheetSelection(name, index + 1, sheets, sheet is not None)
+
+    raise CommandError(f"Nenhuma aba de {filename} tem dados.", 1)
+
+
+def _sheet_summary(selection):
+    return {
+        "sheet": selection.name,
+        "sheets": [
+            {"name": item.name, **({"hidden": True} if item.hidden else {})}
+            for item in selection.sheets
+        ],
+    }
+
+
+def sheet_line(loaded):
+    """A linha "Aba: ..." do cabeçalho em texto, ou None fora do Excel."""
+    selection = loaded.sheet
+    if selection is None:
+        return None
+    return f"Aba: {selection.name} ({selection.position} de {len(selection.sheets)})"
+
+
+def sheet_warning(loaded):
+    """O aviso de que a planilha tem outras abas, quando a aba lida não foi
+    escolhida com --sheet; senão, None."""
+    selection = loaded.sheet
+    if selection is None or selection.explicit or len(selection.sheets) < 2:
+        return None
+    return (
+        f"Aviso: {loaded.filename} tem {len(selection.sheets)} abas "
+        f'({_sheet_names(selection.sheets)}); lida: "{selection.name}". '
+        "Use --sheet para escolher outra."
+    )
+
+
+def load_input(
+    filename, sep=None, encoding=None, file_type=None, type_option=None, sheet=None
+):
     if not os.path.exists(filename):
         raise CommandError(f"O arquivo {filename} não existe.", 2)
     if not os.path.isfile(filename):
@@ -49,14 +139,27 @@ def load_input(filename, sep=None, encoding=None, file_type=None, type_option=No
     options_error = csv_options_error(file_type, sep, encoding)
     if options_error:
         raise CommandError(options_error, 2)
+    if sheet is not None and file_type != FileType.XLSX:
+        raise CommandError("--sheet só vale para arquivos Excel (xlsx).", 2)
 
+    selection = None
+    decimal_separator = None
     try:
-        df = read_file(file_type, filename, sep, encoding)
+        if file_type == FileType.XLSX:
+            df, selection = _read_excel_input(filename, sheet)
+        else:
+            df, decimal_separator = read_file(file_type, filename, sep, encoding)
+    except CommandError:
+        raise
     except Exception as error:
         raise CommandError(
             f"Não foi possível ler {filename} como {file_type.value}: {error}", 1
         ) from error
-    return LoadedInput(filename, file_type, df, file_summary(filename, file_type, df))
+
+    summary = file_summary(filename, file_type, df)
+    if selection is not None:
+        summary.update(_sheet_summary(selection))
+    return LoadedInput(filename, file_type, df, summary, selection, decimal_separator)
 
 
 def output_file_type(filename, file_type=None, type_option=None):

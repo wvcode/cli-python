@@ -15,7 +15,7 @@ Os IDs usam o prefixo `F` para não colidir com a numeração das specs. Esforç
 | F01 | Detecção de delimitador e encoding em CSV | Código, Mercado BR | Community | P | Alta | [017](017-csv-delimitador-encoding.md) |
 | F02 | Validação de CPF/CNPJ com dígito verificador | Mercado BR | Community | P | Alta | [018](018-cpf-cnpj-validacao.md) |
 | F03 | Saída estruturada (`--format json`) em `info`/`profile`/`clean` | Código | Community | P | Alta | [019](019-saida-json.md) |
-| F04 | Seleção de aba em Excel (`--sheet`) | Código | Community | P | Alta | — |
+| F04 | Seleção de aba em Excel (`--sheet`) | Código | Community | P | Alta | [022](022-excel-selecao-de-aba.md) |
 | F05 | Quality gate para CI (`datatool check`) | Ideia | Pro | M | Alta | — |
 | F06 | Mascaramento de dados pessoais (LGPD) | Mercado BR | Pro | M | Alta | — |
 | F07 | `--dry-run` no `clean` | Código | Community | P | Média | — |
@@ -101,6 +101,8 @@ datatool info vendas.csv --format json | jq '.problems[] | select(.category == "
 ---
 
 ### F04 — Seleção de aba em Excel (`--sheet`)
+
+*Virou a spec [022](022-excel-selecao-de-aba.md), já implementada, que também cobre a primeira aba vazia. A proposta abaixo é o registro original.*
 
 **Problema.** `pl.read_excel` lê só a **primeira aba** por padrão, e hoje não há como escolher outra. Planilhas reais têm várias abas (dados, resumo, gráficos), e o usuário não é avisado de que as demais foram ignoradas.
 

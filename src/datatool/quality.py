@@ -202,14 +202,18 @@ def detect_date_format_variance(df, shapes_by_column=None):
     return findings
 
 
-def detect_numeric_as_text(df, dates=None, documents=None):
+def detect_numeric_as_text(df, dates=None, documents=None, decimal_separator=None):
+    """`decimal_separator`: a convenção do arquivo ("," num CSV separado por
+    ";"); sem ela, o separador é detectado por coluna."""
     findings = []
-    for column in numeric_text_columns(df, dates=dates, documents=documents):
+    for column in numeric_text_columns(
+        df, decimal_separator, dates=dates, documents=documents
+    ):
         # A amostra só decide se a coluna é reportada; a contagem é exata, com
         # o mesmo separador decimal que `clean --fix-types` usaria.
         counts = df[column].drop_nulls().value_counts()
         values = counts[column].to_list()
-        separator = detect_decimal_separator(values)
+        separator = decimal_separator or detect_decimal_separator(values)
         numeric_count = sum(
             row["count"]
             for row in counts.iter_rows(named=True)
@@ -394,7 +398,7 @@ def display_message(finding, redact_values):
     return lines
 
 
-def analyze(df):
+def analyze(df, decimal_separator=None):
     # Datas e CPF/CNPJ são classificados uma vez só e servem aos três
     # detectores que dependem deles.
     date_shapes = date_column_shapes(df)
@@ -406,7 +410,12 @@ def analyze(df):
     findings.extend(detect_date_format_variance(df, date_shapes))
     findings.extend(detect_documents(df, documents))
     findings.extend(
-        detect_numeric_as_text(df, dates=list(date_shapes), documents=documents)
+        detect_numeric_as_text(
+            df,
+            dates=list(date_shapes),
+            documents=documents,
+            decimal_separator=decimal_separator,
+        )
     )
     return findings
 

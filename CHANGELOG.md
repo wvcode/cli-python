@@ -2,6 +2,24 @@
 
 As mudanças de cada versão do `datatool-cli`. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e as versões seguem o [versionamento semântico](https://semver.org/lang/pt-BR/).
 
+## [Não lançado]
+
+### Adicionado
+
+- `--sheet` em `convert`, `info`, `profile` e `clean` (e `sheet` nas ferramentas do servidor MCP) escolhe a aba de uma planilha Excel, pelo nome ou pela posição. O texto mostra a aba lida, o JSON lista todas as abas, e as sugestões do `info` incluem a aba.
+
+### Corrigido
+
+- Em planilhas Excel com várias abas, só a primeira era lida, sem aviso: o `info` podia analisar uma aba de resumo e responder "Nenhum problema encontrado". Agora é lida a primeira aba visível com dados, e um aviso no stderr diz qual foi lida e quais são as outras.
+- Uma planilha cuja primeira aba está vazia (uma capa, por exemplo) não abria. Agora a aba vazia é pulada.
+- Num CSV separado por `;` (o do Excel em português), `1.500` era lido como 1,5, sem aviso, em todos os comandos. Agora a vírgula é o separador decimal nesses arquivos: `10,5` é lido como número, e `1.500` chega como texto, para o `--fix-types` converter em 1500. Num CSV separado por vírgula, nada muda.
+- CSV com a chave de acesso da NF-e, o código de barras de um boleto ou qualquer inteiro que não cabe em 64 bits não abria. Essas colunas agora são lidas como texto, sem perder dígitos, e o `info` não sugere mais convertê-las em número (o `--fix-types` quebrava ao tentar).
+- CSV em UTF-16 com BOM ("Texto Unicode" do Excel e exportações de alguns sistemas) era lido como uma única coluna ilegível, com "Nenhum problema encontrado". Agora o encoding é detectado pelo BOM.
+
+### Alterado
+
+- No PyPI, o link *Homepage* aponta para o [site](https://wvcode.github.io/cli-python/), e o GitHub aparece como *Repository*.
+
 ## [0.1.0] — 2026-09-30
 
 Primeira versão publicada.

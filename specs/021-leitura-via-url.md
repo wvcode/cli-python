@@ -121,7 +121,7 @@ O CLI não tem essa restrição: quem digita a URL no terminal é quem decidiu a
 - **Autenticação.** Cabeçalhos (`Authorization`), tokens e cookies não são enviados. URLs pré-assinadas e com token na query já funcionam, porque a credencial está na própria URL. Para o resto, baixa-se antes.
 - **Outros esquemas.** `s3://`, `gs://`, `az://` e bancos de dados são o item [F14](backlog-novas-features.md#f14--conectores-postgresql-s3) (conectores, plano Team); `ftp://` e `file://` não estão previstos.
 - **Cache de downloads** e **leitura em streaming** sem baixar o arquivo inteiro. O arquivo continua carregado inteiro na memória, como os locais (ver [F12](backlog-novas-features.md#f12--arquivos-grandes-via-modo-lazystreaming)).
-- **Barra de progresso.** O stdout pode estar redirecionado (CSV do `convert` sem destino), e o stderr leva o relatório do `clean`. Uma barra de progresso fica para quando houver uma opção de verbosidade.
+- **Barra de progresso.** O stdout pode estar redirecionado (CSV do `convert` sem destino), e o stderr leva o relatório do `clean` sem `--output` e a linha de confirmação "Gravado …" (desde a v0.1). Uma barra de progresso fica para quando houver uma opção de verbosidade.
 
 ## Decisões confirmadas
 Confirmadas antes da implementação (2026-09-30):

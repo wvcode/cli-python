@@ -45,6 +45,7 @@ datatool convert vendas.xlsx vendas.csv
 
 - Formatos suportados: **CSV, JSON, JSONL, Excel (xlsx), Parquet, SQLite**, além de Feather e Avro.
 - SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas. Booleanos, datas e data-hora são gravados com o tipo declarado (`BOOLEAN`, `DATE`, `TIMESTAMP`) e voltam com o mesmo tipo na leitura. Data-hora com fuso volta em UTC, no mesmo instante.
+- Colunas só de inteiros com valores que não cabem em 64 bits, como a chave de acesso da NF-e (44 dígitos) ou o código de barras de um boleto, são lidas como texto: são identificadores, e como texto não perdem nenhum dígito.
 - Os tipos das colunas são inferidos com o arquivo inteiro, não só com as primeiras linhas: um valor como `N/D` numa coluna numérica, em qualquer posição, faz a coluna ser lida como texto (o `info` aponta e o `clean --fix-types` corrige), em vez de impedir a leitura ou virar nulo.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
 - Com `to_filename`, uma linha de confirmação vai para o stderr: `Gravado vendas.parquet (parquet): 1.500 linhas, 8 colunas`.
@@ -256,7 +257,7 @@ datatool clean relatorio.csv --fix-types --decimal-separator , --output relatori
 - Detecta automaticamente as colunas de texto em que ≥ 90% de uma amostra dos valores é numérica
 - Remove `R$` e espaços antes de converter
 - `--decimal-separator ,` ou `--decimal-separator .` define o separador decimal de todas as colunas; o de milhar é o outro caractere. Com `,`: `1.234,56` → `1234.56` e `1.500` → `1500`. Com `.`: `1,234.56` → `1234.56` e `1.500` → `1.5`
-- Sem `--decimal-separator`, decide por coluna: se algum valor tem vírgula ou `R$`, usa `,` como decimal; senão, `.`. Nesse modo, uma coluna só com valores como `1.500` é lida como `1.5` — informe `--decimal-separator ,` para ler como `1500`
+- Sem `--decimal-separator`, num CSV separado por `;` (o do Excel em português) a vírgula é o decimal e o ponto, o milhar: `1.500` → `1500`. Nos demais arquivos, decide por coluna: se algum valor tem vírgula ou `R$`, usa `,` como decimal; senão, `.`, e uma coluna só com valores como `1.500` é lida como `1.5` (informe `--decimal-separator ,` para ler como `1500`)
 - A coluna vira `int` quando nenhum valor tem parte decimal, senão `float`
 - Colunas com zeros à esquerda (`01001000`, típico de CEP/CPF) são ignoradas, porque a conversão perderia os zeros
 - Valores que não puderam ser convertidos viram nulo e são listados na saída, sem interromper as demais colunas:
@@ -302,7 +303,7 @@ datatool clean clientes.csv --normalize-documents masked --document-columns cpf,
 
 ### CSV com `;` ou em `cp1252` (Excel em português)
 
-`convert`, `info`, `profile` e `clean` detectam sozinhos o delimitador (`,`, `;`, tab ou `|`) e o encoding (UTF-8, com ou sem BOM, ou `cp1252`) do CSV de entrada. Um CSV exportado pelo Excel em português funciona sem nenhuma opção. Para forçar:
+`convert`, `info`, `profile` e `clean` detectam sozinhos o delimitador (`,`, `;`, tab ou `|`) e o encoding (UTF-8, com ou sem BOM, UTF-16 com BOM, como o "Texto Unicode" do Excel, ou `cp1252`) do CSV de entrada. Um CSV exportado pelo Excel em português funciona sem nenhuma opção. Para forçar:
 
 ```bash
 datatool info vendas.csv --sep ";" --encoding latin-1
@@ -311,7 +312,22 @@ datatool convert vendas.csv vendas.parquet --sep "\t"
 
 - `--sep` aceita um caractere (ou `\t` para tab); `--encoding` aceita qualquer codec do Python (`cp1252`, `latin-1`, `utf-16`, ...)
 - Valem só para o arquivo de entrada e só para CSV; a saída CSV continua com `,` e UTF-8
-- Números no formato brasileiro (`1.234,56`) chegam como texto: use `datatool clean ... --fix-types --decimal-separator ,`
+- Num CSV separado por `;`, a vírgula é o separador decimal já na leitura: `10,5` é lido como o número 10,5. Valores com ponto de milhar (`1.500`, `1.234,56`) chegam como texto, e o `info` aponta a coluna; `datatool clean ... --fix-types` os converte lendo o ponto como milhar (`1.500` → `1500`). Num CSV separado por vírgula, vale o padrão americano (`1.500` é 1,5)
+
+### Planilhas Excel com várias abas (`--sheet`)
+
+```bash
+datatool info relatorio.xlsx --sheet "Vendas 2025"
+datatool convert relatorio.xlsx clientes.csv --sheet 3
+```
+
+- Sem `--sheet`, `convert`, `info`, `profile` e `clean` leem a **primeira aba visível com dados**: abas vazias (uma capa, por exemplo) e ocultas são puladas
+- Quando a planilha tem outras abas, um aviso no stderr diz qual foi lida: `Aviso: relatorio.xlsx tem 3 abas (Resumo, Vendas 2025, Clientes); lida: "Resumo". Use --sheet para escolher outra.`
+- `--sheet` aceita o nome da aba ou a posição a partir de 1, como no Excel; o nome tem prioridade, então uma aba chamada `2025` é encontrada pelo nome. Abas ocultas só são lidas quando pedidas com `--sheet`
+- O texto mostra `Aba: Vendas 2025 (2 de 3)` logo depois de "Arquivo:", e o JSON traz `sheet` e `sheets` no resumo do arquivo
+- As sugestões do `info` incluem a aba, para o comando sugerido corrigir a aba certa (`datatool clean relatorio.xlsx --sheet 'Vendas 2025' --fix-types`)
+- Aba inexistente é erro (exit code 2) com a lista de abas; aba vazia pedida com `--sheet`, ou planilha sem nenhuma aba com dados, é erro com exit code 1
+- Ao gravar em `.xlsx`, o resultado tem uma aba só: gravar com `--overwrite` sobre a própria planilha de entrada descarta as outras abas dela
 
 ### Log de execução
 
@@ -357,6 +373,7 @@ datatool clean clientes.csv --fix-types --remove-duplicates --output limpo.parqu
 }
 ```
 
+- Em planilhas Excel, o resumo do arquivo (`file`, ou `source` no `convert`) traz `sheet` (a aba lida) e `sheets` (todas as abas, com `"hidden": true` nas ocultas)
 - Cada problema traz `count` e `count_unit` (`rows`, `values`, `formats` ou `variants`), que diz o que está sendo contado
 - Todo documento traz `schema_version`, `command` e `status`; `info` traz `problems`/`suggestions`, `profile` traz `duplicates`/`columns`, o `clean` traz `problems` (diagnóstico) ou `operations`/`output` (com operações), e o `convert` traz `source`/`target`
 - Números sem formatação pt-BR nem arredondamento; `NaN` vira `null`
@@ -396,6 +413,7 @@ Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como f
 - Ferramentas: `datatool_info`, `datatool_profile` (+ `columns`/`max_columns`, padrão 50), `datatool_clean_diagnose`, `datatool_clean_apply` (grava em `output`) e `datatool_convert` (grava em `to_filename`) — cada uma devolve o mesmo JSON de [`--format json`](#saída-em-json---format-json)
 - Todo caminho de arquivo fica restrito ao diretório passado em `--root`; `output`/`to_filename` nunca pode ser o mesmo arquivo da entrada, e uma saída já existente exige `overwrite: true`
 - `redact_values` vem **ligado por padrão** nas ferramentas (diferente do CLI, onde vem desligado): os valores de célula não trafegam para o modelo de IA a menos que a pessoa configure a ferramenta com `redact_values: false`
+- Em planilhas Excel, todas as ferramentas aceitam `sheet` (nome ou posição), e o JSON devolvido lista as abas em `file.sheets` (`source.sheets` no `convert`), para o agente escolher a aba certa
 - Cada chamada é registrada em `<root>/logs/datatool.log` (ou onde `DATATOOL_LOG_DIR` apontar), com o nome prefixado (`mcp info`, `mcp clean`, ...)
 - Só ferramentas Community por enquanto — o detalhamento completo está em [specs/020-mcp-server.md](https://github.com/wvcode/cli-python/blob/main/specs/020-mcp-server.md)
 

@@ -73,7 +73,8 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/wvcode/cli-python"
+Homepage = "https://wvcode.github.io/cli-python/"
+Repository = "https://github.com/wvcode/cli-python"
 "Bug Tracker" = "https://github.com/wvcode/cli-python/issues"
 Changelog = "https://github.com/wvcode/cli-python/blob/main/CHANGELOG.md"
 

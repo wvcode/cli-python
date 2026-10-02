@@ -4,7 +4,7 @@ import os
 
 import polars as pl
 import pytest
-from helpers import isolated_filesystem, write_bytes
+from helpers import isolated_filesystem, read_log, write_bytes
 
 from datatool.main import app
 
@@ -27,10 +27,9 @@ class TestCsvDetection:
             assert result.exit_code == 0
             assert expected in result.stdout
             if command[0] == "convert":
+                # Num CSV separado por ";", "1,5" é número (DT44).
                 with open("saida.csv", encoding="utf8") as f:
-                    assert (
-                        f.read() == 'nome,cidade,valor\nAna,POA,"1,5"\nBia,SP,"2,5"\n'
-                    )
+                    assert f.read() == "nome,cidade,valor\nAna,POA,1.5\nBia,SP,2.5\n"
 
     @pytest.mark.parametrize("delimiter", [",", ";", "\t", "|"])
     def test_detects_delimiters(self, runner, delimiter):
@@ -59,6 +58,40 @@ class TestCsvDetection:
             result = runner.invoke(app, ["convert", "dados.csv", "saida.parquet"])
             assert result.exit_code == 0
             assert pl.read_parquet("saida.parquet").columns == ["nome", "cidade"]
+
+    # DT46: UTF-16 com BOM ("Texto Unicode" do Excel e exportações de alguns
+    # sistemas) não é UTF-8 válido e caía no cp1252, virando uma coluna só.
+    @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+    @pytest.mark.parametrize("delimiter", ["\t", ";"])
+    def test_utf16_with_bom(self, runner, encoding, delimiter):
+        with isolated_filesystem():
+            text = f"nome{delimiter}cidade\nJoão{delimiter}São Paulo\nMaria{delimiter}Belém\n"
+            write_bytes("dados.csv", "﻿" + text, encoding)
+
+            result = runner.invoke(app, ["convert", "dados.csv", "saida.csv"])
+            assert result.exit_code == 0, result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,cidade\nJoão,São Paulo\nMaria,Belém\n"
+
+    def test_utf16_in_info_and_log(self, runner):
+        with isolated_filesystem():
+            write_bytes("dados.csv", "﻿nome\tcidade\nAna\tPOA\nAna\tPOA\n", "utf-16-le")
+
+            result = runner.invoke(app, ["info", "dados.csv"])
+            assert result.exit_code == 0
+            assert "Colunas: 2" in result.stdout
+            assert "1 linhas duplicadas" in result.stdout
+            assert "encoding detectado: utf-16 (BOM)" in read_log()
+
+    def test_utf32_bom_is_not_mistaken_for_utf16(self, runner):
+        # O BOM do UTF-32 LE (FF FE 00 00) começa com o do UTF-16 LE (FF FE).
+        with isolated_filesystem():
+            write_bytes("dados.csv", "﻿nome;cidade\nJoão;POA\n", "utf-32-le")
+
+            result = runner.invoke(app, ["convert", "dados.csv", "saida.csv"])
+            assert result.exit_code == 0, result.stdout
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "nome,cidade\nJoão,POA\n"
 
     def test_sep_and_encoding_override_detection(self, runner):
         with isolated_filesystem():

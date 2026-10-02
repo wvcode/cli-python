@@ -233,12 +233,22 @@ def parse_number(value, decimal_separator):
     return float(value) if "." in value else int(value)
 
 
+def long_integers(series):
+    """Máscara dos valores de texto que são inteiros fora de 64 bits (ex.: chave
+    de NF-e, código de barras de boleto). São identificadores, não números: o
+    leitor de CSV os mantém como texto e o `--fix-types` não os converte (DT45).
+    """
+    is_integer = series.str.contains(r"^-?[0-9]+$")
+    return is_integer & series.cast(pl.Int64, strict=False).is_null()
+
+
 def numeric_text_columns(df, decimal_separator=None, dates=None, documents=None):
     """Colunas de texto que guardam números.
 
     Ficam de fora colunas de CPF/CNPJ e de datas ("20240115" é número, mas é
-    uma data), e códigos com zero à esquerda ("01234": CEP, CPF, ...), que
-    perderiam os zeros se convertidos. `dates`/`documents` recebem essas
+    uma data), códigos com zero à esquerda ("01234": CEP, CPF, ...), que
+    perderiam os zeros se convertidos, e inteiros que não cabem em 64 bits
+    (identificadores, ver `long_integers`). `dates`/`documents` recebem essas
     colunas de quem já as calculou, para não classificar tudo de novo.
     """
     if dates is None:
@@ -255,6 +265,8 @@ def numeric_text_columns(df, decimal_separator=None, dates=None, documents=None)
         if not sample:
             continue
         if any(_LEADING_ZERO_PATTERN.match(_strip_number(value)) for value in sample):
+            continue
+        if long_integers(df[column].drop_nulls()).any():
             continue
 
         separator = decimal_separator or detect_decimal_separator(sample)

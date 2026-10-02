@@ -31,7 +31,7 @@ A saída no terminal não muda: o que foi detectado automaticamente vai só para
 
 ## Comportamento — leitura de CSV
 **Encoding**
-1. Tenta ler como UTF-8. BOM UTF-8 (gerado pelo Excel em "CSV UTF-8") é aceito e não aparece no nome da primeira coluna — o polars já faz isso hoje.
+1. Tenta ler como UTF-8. BOM UTF-8 (gerado pelo Excel em "CSV UTF-8") é aceito e não aparece no nome da primeira coluna — o polars já faz isso hoje. *(Desde o débito técnico DT46, antes disso um BOM de UTF-16 ou UTF-32, do "Texto Unicode" do Excel e de exportações de alguns sistemas, define o encoding; sem isso, esses arquivos caíam no `cp1252` e viravam uma coluna só.)*
 2. Se o arquivo não for UTF-8 válido, relê como `cp1252`. Escolhido em vez de `latin-1` porque é o que o Excel/Windows em português de fato gera e é superconjunto dos caracteres imprimíveis de `latin-1` (inclui `€`, aspas curvas `“ ”`, travessão `–`).
 3. `--encoding` aceita qualquer codec conhecido pelo Python (`latin-1`, `utf-16`, `cp850`, ...) e desliga a detecção.
 
@@ -107,11 +107,12 @@ Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCsvDetecti
 - **Operações do `clean`:** registradas em `_record`, a partir dos mesmos relatórios da [019](019-saida-json.md), mas sem os campos `unrecognized_examples`/`failed_examples`. Os valores não reconhecidos continuam aparecendo só no terminal.
 - **`utils encode`/`decode`:** registravam início e fim com `args: (omitidos)`, porque o argumento é o próprio valor a codificar. *(Comandos removidos no débito técnico DT22.)*
 - Números no log saem sem separador de milhar (`1204 linhas`), diferente do exemplo original desta spec.
+- **Inteiros além de 64 bits** (débito técnico DT45): uma coluna só de inteiros com algum valor que não cabe em 64 bits (chave de NF-e, código de barras de boleto) é lida como texto. A leitura normal é feita primeiro; só quando ela falha, ou traz uma coluna de 128 bits, o arquivo é relido com essas colunas como texto. O log registra quais foram.
 
 ## Fora de escopo
 - **Gravar** CSV com `;` ou em `cp1252`: a saída continua `,` e UTF-8. É uma opção natural para depois (`--output-sep`/`--output-encoding`), para quem precisa devolver o arquivo ao Excel.
 - Detectar outros encodings além de UTF-8 e `cp1252` (ex.: via `chardet`): o usuário informa com `--encoding`.
-- Separador decimal `,` nos valores numéricos: já é tratado pelo `clean --fix-types --decimal-separator ,` de [010](010-clean-corrigir-tipos.md). Com esta spec, um CSV do Excel BR passa a chegar com as colunas certas e os números como texto (`1.234,56`), prontos para o `--fix-types`.
+- Separador decimal `,` nos valores numéricos: já é tratado pelo `clean --fix-types --decimal-separator ,` de [010](010-clean-corrigir-tipos.md). Com esta spec, um CSV do Excel BR passa a chegar com as colunas certas e os números como texto (`1.234,56`), prontos para o `--fix-types`. *(Desde o débito técnico DT44, num CSV separado por `;` a leitura usa a vírgula como decimal: `10,5` chega como número, e `1.500` chega como texto, em vez de virar 1,5 em silêncio. O `--fix-types` nesses arquivos lê o ponto como milhar.)*
 - Linhas de título/rodapé antes do cabeçalho (comuns em relatórios exportados), aspas ou caractere de escape customizados.
 - Configurar o log (local, nível, desligar, `--verbose` para espelhar no terminal): o local e o formato são fixos nesta spec.
 - Reconciliar o comando-esqueleto `dataset decode` (ver [backlog](backlog-novas-features.md#reconciliar-comandos-esqueleto)).

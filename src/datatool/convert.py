@@ -19,6 +19,7 @@ def convert(
     encoding=None,
     overwrite=False,
     reload_target=False,
+    sheet=None,
 ):
     """Converte o arquivo; levanta `CommandError` em entrada ou saída inválida.
 
@@ -29,7 +30,12 @@ def convert(
         raise CommandError("--overwrite só tem efeito com TO_FILENAME.", 2)
 
     loaded = load_input(
-        filename, sep, encoding, file_type=from_type, type_option="--from-type"
+        filename,
+        sep,
+        encoding,
+        file_type=from_type,
+        type_option="--from-type",
+        sheet=sheet,
     )
     if to_filename is None:
         return ConvertResult(loaded, None, None, None)
@@ -41,7 +47,7 @@ def convert(
     target_shape = None
     if reload_target:
         try:
-            target_shape = read_file(to_type, to_filename).shape
+            target_shape = read_file(to_type, to_filename).df.shape
         except Exception as error:
             raise CommandError(
                 f"{to_filename} foi gravado, mas não foi possível relê-lo para o "

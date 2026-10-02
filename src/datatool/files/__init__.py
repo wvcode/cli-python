@@ -1,35 +1,28 @@
 """Leitura e gravação de arquivos em todos os formatos suportados."""
 
-import warnings
+from collections import namedtuple
 from functools import partial
 
 import polars as pl
 
 from ..execution_log import log
 from .csv import csv_options_error, read_csv
+from .excel import Sheet, find_sheet, list_sheets, read_excel
 from .sqlite import read_sqlite, write_sqlite
 from .types import SUPPORTED_EXTENSIONS, FileType, infer_file_type
 
 __all__ = [
     "SUPPORTED_EXTENSIONS",
     "FileType",
+    "Sheet",
+    "Table",
     "csv_options_error",
+    "find_sheet",
     "infer_file_type",
+    "list_sheets",
     "read_file",
     "save_file",
 ]
-
-
-def _read_excel(filename):
-    # O próprio pl.read_excel (polars 1.x) chama from_arrow() por dentro e
-    # dispara um FutureWarning sobre a mudança do from_arrow no polars 2.0. Não
-    # é uso nosso (quem precisa se ajustar é o read_excel do polars), então só
-    # esse aviso é silenciado, e só nesta chamada.
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", message=r"from_arrow\(", category=FutureWarning
-        )
-        return pl.read_excel(filename, infer_schema_length=None)
 
 
 # Todos os leitores inferem os tipos com o arquivo inteiro
@@ -39,12 +32,12 @@ def _read_excel(filename):
 # justamente a sujeira que o `info` existe para apontar. Lida por inteiro, a
 # coluna vira texto e o `clean --fix-types` a corrige.
 #
-# CSV fica de fora: é lido por `read_csv`, que também recebe sep/encoding.
+# CSV e Excel ficam de fora: `read_csv` também recebe sep/encoding, e
+# `read_excel`, a aba.
 _READERS = {
     FileType.FEATHER: pl.read_ipc,
     FileType.JSON: partial(pl.read_json, infer_schema_length=None),
     FileType.JSONL: partial(pl.read_ndjson, infer_schema_length=None),
-    FileType.XLSX: _read_excel,
     FileType.PARQUET: pl.read_parquet,
     FileType.AVRO: pl.read_avro,
     FileType.SQLITE: read_sqlite,
@@ -62,14 +55,21 @@ _WRITERS = {
 }
 
 
-def read_file(file_type, filename, sep=None, encoding=None):
+# O que foi lido e o separador decimal do arquivo, quando o formato tem uma
+# convenção (CSV separado por ";": vírgula). None: cada coluna é detectada.
+Table = namedtuple("Table", ["df", "decimal_separator"])
+
+
+def read_file(file_type, filename, sep=None, encoding=None, sheet=None):
     log.info("lendo %s (%s)", filename, file_type.value)
     if file_type == FileType.CSV:
-        df = read_csv(filename, sep, encoding)
+        table = Table(*read_csv(filename, sep, encoding))
+    elif file_type == FileType.XLSX:
+        table = Table(read_excel(filename, sheet), None)
     else:
-        df = _READERS[file_type](filename)
-    log.info("lido — %s linhas, %s colunas", df.height, df.width)
-    return df
+        table = Table(_READERS[file_type](filename), None)
+    log.info("lido — %s linhas, %s colunas", table.df.height, table.df.width)
+    return table
 
 
 def save_file(df, file_type, filename):

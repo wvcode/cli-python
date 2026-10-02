@@ -1,9 +1,10 @@
 import os
+import shlex
 from collections import namedtuple
 
 from .execution_log import log
 from .formatting import format_int_ptbr
-from .loading import load_input
+from .loading import load_input, sheet_line
 from .quality import analyze, display_message, finding_to_dict
 from .reporting import build_document
 
@@ -40,11 +41,11 @@ def _format_size(num_bytes):
         size /= 1024
 
 
-def diagnose(filename, sep=None, encoding=None):
+def diagnose(filename, sep=None, encoding=None, sheet=None):
     """Diagnostica o arquivo; levanta `CommandError` se não conseguir lê-lo."""
-    loaded = load_input(filename, sep, encoding)
+    loaded = load_input(filename, sep, encoding, sheet=sheet)
 
-    findings = analyze(loaded.df)
+    findings = analyze(loaded.df, loaded.decimal_separator)
     log.info(
         "diagnóstico — %s problemas (%s)",
         len(findings),
@@ -57,6 +58,16 @@ def diagnose(filename, sep=None, encoding=None):
         if _suggestion_triggered(category, categories_found)
     ]
     return InfoResult(loaded, findings, suggestions)
+
+
+def _suggested_command(loaded, flag):
+    """O comando `clean` sugerido, pronto para copiar: com a aba lida quando a
+    planilha tem mais de uma (senão corrigiria outra aba), e com aspas onde o
+    shell precisa."""
+    parts = ["datatool", "clean", shlex.quote(loaded.filename)]
+    if loaded.sheet is not None and len(loaded.sheet.sheets) > 1:
+        parts += ["--sheet", shlex.quote(loaded.sheet.name)]
+    return " ".join([*parts, flag])
 
 
 def to_document(result, redact_values=False):
@@ -72,7 +83,7 @@ def to_document(result, redact_values=False):
             {
                 "category": category,
                 "label": label,
-                "command": f"datatool clean {loaded.filename} {flag}",
+                "command": _suggested_command(loaded, flag),
             }
             for category, label, flag in result.suggestions
         ],
@@ -82,6 +93,8 @@ def to_document(result, redact_values=False):
 def print_text(result, redact_values=False):
     filename, df = result.input.filename, result.input.df
     print(f"Arquivo: {filename}")
+    if line := sheet_line(result.input):
+        print(line)
     print(f"Linhas: {format_int_ptbr(df.height)}")
     print(f"Colunas: {format_int_ptbr(df.width)}")
     print(f"Tamanho: {_format_size(os.path.getsize(filename))}")
@@ -98,4 +111,4 @@ def print_text(result, redact_values=False):
 
     print("Sugestões:")
     for index, (_, label, flag) in enumerate(result.suggestions, start=1):
-        print(f"  {index}. {label} → datatool clean {filename} {flag}")
+        print(f"  {index}. {label} → {_suggested_command(result.input, flag)}")

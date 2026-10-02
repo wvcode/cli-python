@@ -1,6 +1,6 @@
 import sys
 from collections import namedtuple
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import polars as pl
 
@@ -23,6 +23,7 @@ from .loading import (
     output_file_type,
     parse_column_list,
     resolve_columns,
+    sheet_line,
     write_output,
 )
 from .quality import analyze_clean, display_message, finding_to_dict
@@ -691,9 +692,9 @@ def _redact_report(report):
 # ----------------------------------------------------------------
 # Comando
 # ----------------------------------------------------------------
-def diagnose(filename, sep=None, encoding=None):
+def diagnose(filename, sep=None, encoding=None, sheet=None):
     """Diagnóstico sem alterar o arquivo (`clean` sem operações)."""
-    loaded = load_input(filename, sep, encoding)
+    loaded = load_input(filename, sep, encoding, sheet=sheet)
     findings = analyze_clean(loaded.df)
     log.info(
         "diagnóstico — %s problemas (%s)",
@@ -704,7 +705,13 @@ def diagnose(filename, sep=None, encoding=None):
 
 
 def apply_operations(
-    filename, options, output=None, overwrite=False, sep=None, encoding=None
+    filename,
+    options,
+    output=None,
+    overwrite=False,
+    sep=None,
+    encoding=None,
+    sheet=None,
 ):
     """Aplica as operações de `options` e grava em `output`, se informado.
 
@@ -715,12 +722,17 @@ def apply_operations(
     if overwrite and output is None:
         raise CommandError("--overwrite só tem efeito com --output.", 2)
 
-    loaded = load_input(filename, sep, encoding)
+    loaded = load_input(filename, sep, encoding, sheet=sheet)
 
     output_type = None
     if output is not None:
         output_type = output_file_type(output)
         check_output(output, overwrite)
+
+    # Sem --decimal-separator, vale a convenção do arquivo ("," num CSV
+    # separado por ";", onde "1.500" é mil e quinhentos).
+    if options.fix_types and options.decimal_separator is None:
+        options = replace(options, decimal_separator=loaded.decimal_separator)
 
     reports = []
     df = _run_phase(loaded.df, options, _COLUMN_OPERATIONS, reports)
@@ -747,6 +759,8 @@ def diagnosis_document(result, redact_values=False):
 def print_diagnosis(result, redact_values=False):
     filename, df = result.input.filename, result.input.df
     print(f"Arquivo: {filename}")
+    if line := sheet_line(result.input):
+        print(line)
     print(f"Linhas: {format_int_ptbr(df.height)}")
     print(f"Colunas: {format_int_ptbr(df.width)}")
     print()

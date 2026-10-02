@@ -1,3 +1,4 @@
+import sys
 from typing import Annotated
 
 import typer
@@ -9,6 +10,7 @@ from . import info as info_command
 from . import profiler as profile_command
 from .execution_log import logged
 from .files import FileType
+from .loading import sheet_warning
 from .reporting import CommandError, OutputFormat, fail, print_document
 
 app = typer.Typer(
@@ -32,6 +34,14 @@ EncodingOption = Annotated[
     typer.Option(
         "--encoding",
         help="Encoding do CSV de entrada (ex.: cp1252, latin-1). Se omitido, detecta.",
+    ),
+]
+SheetOption = Annotated[
+    str | None,
+    typer.Option(
+        "--sheet",
+        help="Aba da planilha Excel de entrada: nome ou posição (a partir de 1). "
+        "Se omitido, lê a primeira aba com dados.",
     ),
 ]
 OverwriteOption = Annotated[
@@ -60,6 +70,8 @@ def _emit(command, output_format, run, to_document, print_text):
     """
     try:
         result = run()
+        if warning := sheet_warning(result.input):
+            print(warning, file=sys.stderr)
         if output_format == OutputFormat.JSON:
             print_document(to_document(result))
         else:
@@ -109,6 +121,7 @@ def convert(
     output_format: FormatOption = OutputFormat.TEXT,
     sep: SepOption = None,
     encoding: EncodingOption = None,
+    sheet: SheetOption = None,
 ):
     """Converte um arquivo de um formato para outro.
 
@@ -144,6 +157,7 @@ def convert(
             encoding=encoding,
             overwrite=overwrite,
             reload_target=show_stats,
+            sheet=sheet,
         ),
         to_document=convert_command.to_document,
         print_text=lambda result: convert_command.print_text(result, show_stats),
@@ -161,6 +175,7 @@ def info(
     sep: SepOption = None,
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
+    sheet: SheetOption = None,
 ):
     """Diagnostica o arquivo e sugere o comando que corrige cada problema.
 
@@ -170,7 +185,9 @@ def info(
     _emit(
         "info",
         output_format,
-        lambda: info_command.diagnose(filename, sep=sep, encoding=encoding),
+        lambda: info_command.diagnose(
+            filename, sep=sep, encoding=encoding, sheet=sheet
+        ),
         to_document=lambda result: info_command.to_document(result, redact_values),
         print_text=lambda result: info_command.print_text(result, redact_values),
     )
@@ -205,6 +222,7 @@ def profile(
         ),
     ] = None,
     redact_values: RedactValuesOption = False,
+    sheet: SheetOption = None,
 ):
     """Estatísticas de cada coluna.
 
@@ -222,6 +240,7 @@ def profile(
             encoding=encoding,
             columns=columns,
             max_columns=max_columns,
+            sheet=sheet,
         ),
         to_document=lambda result: profile_command.to_document(result, redact_values),
         print_text=lambda result: profile_command.print_text(result, redact_values),
@@ -302,6 +321,7 @@ def clean(
     sep: SepOption = None,
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
+    sheet: SheetOption = None,
 ):
     """Diagnostica e corrige problemas de qualidade.
 
@@ -351,7 +371,9 @@ def clean(
         _emit(
             "clean",
             output_format,
-            lambda: clean_command.diagnose(filename, sep=sep, encoding=encoding),
+            lambda: clean_command.diagnose(
+                filename, sep=sep, encoding=encoding, sheet=sheet
+            ),
             to_document=lambda result: clean_command.diagnosis_document(
                 result, redact_values
             ),
@@ -375,6 +397,7 @@ def clean(
             overwrite=overwrite,
             sep=sep,
             encoding=encoding,
+            sheet=sheet,
         ),
         to_document=lambda result: clean_command.result_document(result, redact_values),
         print_text=lambda result: clean_command.print_result(result, redact_values),

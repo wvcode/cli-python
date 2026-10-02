@@ -43,6 +43,8 @@ datatool clean vendas.csv --fix-types --remove-duplicates --output limpo.parquet
 }
 ```
 
+  *(Desde a spec [022](022-excel-selecao-de-aba.md), em planilhas Excel o resumo do arquivo traz também `sheet`, o nome da aba lida, e `sheets`, a lista de abas na ordem, cada uma com `name` e, quando oculta, `"hidden": true`. São campos novos num objeto existente: `schema_version` continua 1.)*
+
 - **Erros também em JSON**, no stdout, com o mesmo exit code do modo texto. A mensagem é a mesma do modo texto: *(Desde o débito técnico DT14, as mensagens de erro são em pt-BR, como o resto da saída. Nomes de opções continuam como na linha de comando, e textos vindos de bibliotecas, como o polars, aparecem como elas os produzem.)*
 
 ```json

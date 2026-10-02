@@ -6,7 +6,7 @@ Itens marcados com **(reproduzido)** foram confirmados executando o CLI. Feature
 
 Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = resolvido · ◐ = resolvido em parte (ver a nota "Resolução" no item).
 
-Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos.
+Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT47 estão resolvidos e os demais, abertos.
 
 ## Resumo
 
@@ -527,13 +527,213 @@ Pendência aceita no DT14: toda saída própria da ferramenta está em pt-BR, ma
 
 Prioridade baixa: afeta quem digita a opção errada, não o resultado dos comandos.
 
+**Atualização (análise pré-divulgação):** o exemplo do "N/D" não se aplica mais desde o DT28, porque a coluna passa a ser lida como texto. Casos atuais, reproduzidos na v0.1.0:
+- CSV vazio (0 bytes): `Não foi possível ler vazio.csv como csv: empty CSV`;
+- CSV com linhas de tamanhos diferentes: a mensagem termina com `Consider setting 'truncate_ragged_lines=True'.`, um parâmetro interno do polars que a pessoa não tem como passar;
+- a chave de NF-e do DT45 e a primeira aba vazia do DT47 também caem aqui, mas são resolvidas nos próprios itens.
+
+---
+
+## Análise pré-divulgação (2026-09-30)
+
+Análise do código da v0.1.0, já publicada no PyPI, feita para decidir se o MVP estava pronto para ser divulgado. Além da leitura de `src/`, os 4 comandos foram rodados com 17 arquivos montados para imitar exportações reais (Excel em português, sistemas de NF-e, UTF-16, cabeçalhos com espaço), e o sandbox do MCP foi atacado com links simbólicos e caminhos para fora da raiz.
+
+Os itens DT44–DT47 têm uma coisa em comum: dão **resultado errado sem aviso, ou impedem a leitura, justamente nos arquivos brasileiros** que o produto promete entender. Por isso a recomendação é corrigi-los numa v0.1.1, antes de divulgar.
+
+| ID | Item | Área | Severidade | Esforço |
+|----|------|------|------------|---------|
+| DT44 ✅ | `1.500` lido como `1.5` em CSV separado por `;` | IO/clean | Alta | M |
+| DT45 ✅ | Número com mais de 38 dígitos (chave de NF-e) impede a leitura do CSV | IO | Alta | P |
+| DT46 ✅ | CSV em UTF-16 lido como lixo, com "Nenhum problema encontrado" | IO | Alta | P |
+| DT47 ✅ | Excel: aba errada lida em silêncio, e capa vazia impede a leitura | IO | Alta | M |
+| DT48 | Coluna com espaço nas pontas do nome não pode ser referenciada | CLI | Média | P |
+| DT49 | `--fix-types` apaga os valores que não converte, inclusive em colunas de código | clean | Média | P |
+| DT50 | CSV gravado não abre direito no Excel em português | IO | Média | M |
+| DT51 | Negativo contábil `(1.234,56)` não é reconhecido como número | clean | Baixa | P |
+
+O que resistiu bem, e não virou item:
+- CSV UTF-8 com BOM (padrão do Excel) e latin-1;
+- campo com quebra de linha entre aspas;
+- detecção do separador com `;` e `,` dentro dos textos;
+- JSON com listas e objetos aninhados;
+- arquivo só com cabeçalho, coluna toda vazia e nomes de coluna duplicados;
+- o sandbox do MCP, que recusou links simbólicos para fora da raiz, caminhos absolutos e `../`, inclusive na gravação.
+
+### DT44 — `1.500` lido como `1.5` em CSV separado por `;` **(reproduzido)**
+[files/csv.py:90](../src/datatool/files/csv.py#L90), [inference.py:217](../src/datatool/inference.py#L217)
+
+O Excel em português grava no CSV o número como ele aparece na célula. Uma coluna formatada com separador de milhar sai como `1.500`, `12.000`, `800`, e o arquivo usa `;` como separador, porque a vírgula é o decimal. O leitor de CSV do polars entende o ponto como separador decimal:
+
+```
+preco (texto no arquivo): "1.500", "800", "12.000"   →   lido como 1.5, 800.0, 12.0
+```
+
+A coluna já chega como número, então o `info` não aponta nada e o `convert` grava 1,5. Numa coluna com `800` e `1.500`, a ferramenta passa a dizer que 1.500 é menor que 800. É corrupção de dado **sem aviso**, no cenário principal do produto.
+
+O `--fix-types` tem o mesmo problema quando a coluna chega como texto: `detect_decimal_separator` só escolhe a vírgula se algum valor da coluna tiver vírgula ou "R$". Numa coluna só com `1.200` e `10`, escolhe o ponto e converte `1.200` em 1,2.
+
+**Correção proposta:**
+- **Leitura:** em CSV separado por `;`, detectado ou informado com `--sep`, ler com `decimal_comma=True`. Testado no polars 1.27.1 (o mínimo) e no 1.44.2: `10,5` vira 10,5, e `1.200` deixa de virar 1,2 e passa a ser lido como texto, para o `--fix-types` converter.
+- **`--fix-types`:** nesses arquivos, o separador decimal padrão passa a ser a vírgula, em vez de o ponto quando nenhum valor tem vírgula. O `--decimal-separator` continua valendo para forçar.
+- **Log e JSON:** registrar a convenção usada, para ser possível auditar.
+- **Decisão pendente:** CSV separado por vírgula continua no padrão americano (`1.500` = 1,5), que é o que esse separador indica.
+- **Testes:** `1.500`, `12.000`, `1.234.567`, `10,5`, `1.234,56` e colunas mistas, nos dois separadores.
+
+**Resolução:** implementada a correção proposta. A decisão pendente seguiu a proposta: CSV separado por vírgula continua no padrão americano. Tab e `|` também, porque nada nesses separadores indica a convenção brasileira.
+- **Leitura** (`read_csv`): com o separador `;`, detectado ou informado com `--sep`, a leitura usa `decimal_comma=True`. O log registra `separador decimal: vírgula (CSV separado por ;)`.
+- **Convenção do arquivo:** `read_file` passou a devolver, junto com a tabela, o separador decimal do arquivo (`Table(df, decimal_separator)`; "," nos CSV separados por `;`, None nos demais). Isso vai para `LoadedInput.decimal_separator`, como a aba no Excel.
+- **`info` e `--fix-types`:** nesses arquivos, usam a vírgula como padrão: `quality.analyze` recebe a convenção, e `apply_operations` a aplica quando não há `--decimal-separator`, que continua valendo.
+- **Mudança de comportamento intencional:** num CSV separado por `;`, valores como `10,5` passam a ser lidos como número já na leitura, em vez de chegar como texto. Os dois testes que conferiam a saída antiga (`"1,5"` entre aspas no CSV gravado) foram atualizados com o motivo.
+- **Efeito colateral aceito:** num CSV separado por `;` com decimais americanos (`1.5`), a coluna passa a ser texto em vez de número. Esse arquivo é raro, porque `;` é usado justamente quando a vírgula é o decimal, e `--decimal-separator .` resolve.
+- `tests/test_decimal_convention.py` (12 testes) cobre:
+  - milhar, `1.234.567`, vírgula decimal, milhar com decimais;
+  - o `info` apontando a coluna;
+  - `--sep ;` informado e `--decimal-separator .` prevalecendo;
+  - o log;
+  - `,`, tab e `|` sem mudança, e `R$` num CSV com vírgula.
+
+  6 deles falham na versão anterior; os outros 6 protegem o que não podia mudar. A saída dos 72 comandos do snapshot não mudou, e o `info` num CSV de 200 mil linhas separado por `;` continuou em ~0,6 s.
+
+### DT45 — Número com mais de 38 dígitos impede a leitura do CSV **(reproduzido)**
+[files/csv.py:90](../src/datatool/files/csv.py#L90)
+
+Uma coluna com a chave de acesso da NF-e (44 dígitos) ou o código de barras de um boleto (47–48 dígitos) faz o arquivo inteiro não abrir, em nenhum comando:
+
+```
+Não foi possível ler nfe.csv como csv: could not parse `3572…947` as dtype `i128` at column 'chave_nfe' …
+You might want to try: increasing `infer_schema_length` … setting `ignore_errors` to `True` …
+```
+
+O polars reconhece a coluna como inteira e tenta usar o maior tipo inteiro que tem (`i128`, até 38 dígitos). Quando o número não cabe, falha. A mensagem ainda sugere parâmetros internos do polars. Números com 19 a 38 dígitos abrem, mas como `i128`, um tipo que nem todo formato de saída aceita bem.
+
+**Correção proposta:** colunas inteiras que não cabem num inteiro de 64 bits (mais de 18 dígitos) passam a ser lidas como texto. São identificadores, não quantidades, e como texto preservam zeros à esquerda e podem ser gravadas em qualquer formato. Uma forma de fazer: ler primeiro só como texto, achar as colunas só de dígitos com mais de 18 caracteres e passá-las em `schema_overrides` na leitura de verdade. Precisa ser conferido contra a leitura atual, como no DT32.
+
+**Resolução:**
+- **O critério é "não cabe em 64 bits", não o número de dígitos.** No polars 1.27.1 (o mínimo) o problema era maior do que o registrado: qualquer valor além de 64 bits (a partir de 9.223.372.036.854.775.808, 19 dígitos) já impedia a leitura. No 1.44.2, até 38 dígitos a coluna vinha como `Int128`, e acima disso o arquivo não abria.
+- **Leitura sem custo no caso comum** (`read_csv` em `files/csv.py`):
+  - o arquivo é lido normalmente;
+  - só se a leitura falhar é que ele é relido todo como texto, para achar as colunas só de inteiros com algum valor fora de 64 bits. Sem nenhuma, o erro original é repassado; um CSV com linhas de tamanhos diferentes continua com a mensagem de antes;
+  - se a leitura der certo mas trouxer uma coluna inteira maior que 64 bits (`Int128`), ele é relido com ela como texto;
+  - o log registra as colunas lidas como texto.
+- **Efeito colateral corrigido:** a chave vira texto só com dígitos, e o `info` passaria a apontá-la como "número guardado como texto" e sugerir `--fix-types`. O `--fix-types`, por sua vez, **quebrava com traceback** (`OverflowError`) ao tentar convertê-la, um defeito que já existia para qualquer coluna de texto com inteiros enormes. `inference.long_integers`, usado pela leitura e por `numeric_text_columns`, deixa essas colunas fora da detecção de números, então o diagnóstico e a correção seguem a mesma regra.
+- `tests/test_long_integers.py` (17 testes) cobre:
+  - a chave de NF-e nos 4 comandos, sem perder dígitos, com as outras colunas mantendo seus tipos;
+  - os limites de 64 bits (19 dígitos acima do máximo, 20, negativo, 38, 39);
+  - inteiros que cabem, que continuam `Int64`;
+  - outros erros de leitura, que continuam com a mesma mensagem;
+  - o log;
+  - `info` e `--fix-types` com a chave.
+
+  15 dos testes falham na versão anterior, nas duas versões do polars. A saída dos 72 comandos do snapshot não mudou, e o `info` no CSV de 200 mil linhas continua em ~0,61 s.
+
+### DT46 — CSV em UTF-16 lido como lixo **(reproduzido)**
+[files/csv.py:37](../src/datatool/files/csv.py#L37)
+
+O "Texto Unicode" do Excel e as exportações de alguns sistemas gravam UTF-16 com BOM (`FF FE`). O arquivo não é UTF-8 válido, então cai no cp1252, e tudo vira uma única coluna:
+
+```
+colunas: ['ÿþn\x00o\x00m\x00e\x00\t\x00c\x00i\x00d\x00a\x00d\x00e\x00']
+Nenhum problema encontrado.
+```
+
+É o mesmo tipo de falha do DT47: uma resposta errada que parece certa.
+
+**Correção proposta:** antes do teste de UTF-8, reconhecer o BOM de UTF-16 (`FF FE`/`FE FF`) e usar `utf-16`. O polars decodifica encodings diferentes de UTF-8 em Python, como já faz com o cp1252. O log registra "encoding detectado: utf-16 (BOM)". Testes com UTF-16 LE e BE, separados por tab e por `;`.
+
+**Resolução:**
+- `read_csv` verifica o BOM antes do teste de UTF-8 e usa `utf-16` (LE ou BE) ou `utf-32`. O UTF-32 entrou porque o BOM do UTF-32 LE (`FF FE 00 00`) começa com o do UTF-16 LE: sem essa checagem, a correção leria UTF-32 como UTF-16.
+- O log registra `encoding detectado: utf-16 (BOM)`. Com `--encoding`, a detecção continua desligada.
+- 6 testes novos em `tests/test_csv_detection.py`: UTF-16 LE e BE separados por tab e por `;`, `info` com o log, e UTF-32 não confundido com UTF-16. Todos falham na versão anterior. Arquivos UTF-16 sem BOM continuam não detectados (caem no `cp1252`); o `--encoding utf-16` resolve.
+
+### DT47 — Excel: aba errada lida em silêncio, e capa vazia impede a leitura **(reproduzido)**
+[files/__init__.py:23](../src/datatool/files/__init__.py#L23)
+
+Só a primeira aba é lida, sem aviso. Numa planilha "Resumo" / "Vendas 2025" / "Clientes", o `info` analisa o resumo e responde "Nenhum problema encontrado". Com uma capa vazia antes dos dados, o arquivo não abre (`empty Excel sheet`, com um parâmetro interno do polars na mensagem).
+
+**Correção:** a spec [022](022-excel-selecao-de-aba.md), já escrita e com as decisões confirmadas: `--sheet`, primeira aba visível com dados por padrão, aviso quando há outras abas e fastexcel mínimo 0.12.0.
+
+**Resolução:** spec 022 implementada, com todos os critérios de aceite.
+- **Código:** [files/excel.py](../src/datatool/files/excel.py) lista as abas e lê a escolhida. [loading.py](../src/datatool/loading.py) escolhe a aba, monta as mensagens, o aviso e o resumo no JSON. Os 4 comandos e as 5 ferramentas do MCP passam `sheet` adiante. O aviso sai em `main._emit`, então o MCP não imprime nada.
+- **Decisão revista na implementação:** o fastexcel mínimo **não** subiu para 0.12.0. Pelo fastexcel, saber se uma aba está oculta exige carregar a aba inteira, e a leitura de planilhas com várias abas ficaria ~3x mais lenta. As abas ocultas vêm do `xl/workbook.xml`, em ~1 ms, com qualquer versão do fastexcel. A planilha de teste (5 abas, 3 com 100 mil linhas) levou 0,29 s no `info`, contra 0,28 s na v0.1.0.
+- **Sugestões do `info`:** os comandos sugeridos passaram a usar `shlex.quote`, também no nome do arquivo. Um arquivo com espaço no nome gerava uma sugestão que não funcionava se copiada.
+- `tests/test_excel_sheets.py` (37 testes) cobre:
+  - nome, posição, nome numérico, capa vazia, aba oculta (pulada e escolhida), aba inexistente, posição fora da faixa, aba vazia pedida, planilha sem dados e `--sheet` em CSV;
+  - o aviso (e sua ausência), a linha "Aba:", o JSON, as sugestões (executadas como copiadas) e o log;
+  - as 5 ferramentas do MCP.
+
+  34 deles falham na versão anterior; os 3 que passam protegem o comportamento de planilhas de uma aba e de outros formatos. A saída dos 72 comandos do snapshot não mudou.
+- **Risco que ficou mais visível:** gravar em `.xlsx` produz uma planilha de uma aba só. Com `--sheet` e `--overwrite` sobre a própria planilha de entrada, as outras abas se perdem. Isso já acontecia antes, mas agora é mais provável, porque a pessoa escolhe uma aba que não é a primeira. Está documentado no README; recusar ou avisar nesse caso fica como pendência.
+
+### DT48 — Coluna com espaço nas pontas do nome não pode ser referenciada **(reproduzido)**
+[loading.py:99-103](../src/datatool/loading.py#L99-L103)
+
+Exportações do Excel costumam trazer cabeçalhos como `" email "` ou `"Nome "`. `parse_column_list` tira os espaços do que a pessoa digita, então `--key " email "` procura `email`, que não existe. Não há como referenciar essa coluna em `--key`, `--columns`, `--remove-columns`, `--rename-columns`, `--date-columns` e similares. O `--trim` limpa só os valores, não os nomes.
+
+**Correção proposta:** em `resolve_columns`, quando o nome exato não existe, aceitar a coluna cujo nome sem espaços nas pontas é igual ao pedido, desde que só uma coluna case. O diagnóstico do `clean` pode apontar "nomes de coluna com espaços extras" e sugerir o renomear.
+
+### DT49 — `--fix-types` apaga os valores que não converte **(reproduzido)**
+[clean.py:234-263](../src/datatool/clean.py#L234-L263)
+
+Uma coluna de códigos (`1000`, `1001`, …, `A12`, `B7`) passa pelo critério "90% da amostra é número". O `info` sugere `--fix-types`, e ao converter, `A12` e `B7` viram **nulos** no arquivo gravado (`replace_strict(..., default=None)`). O relatório diz "falharam: 2" e mostra os exemplos, mas o dado original se perde. Com `--output` sobre o próprio arquivo e `--overwrite`, não há como recuperar.
+
+**Correção proposta** (escolher uma):
+- **Não converter** colunas em que algum valor falha, e reportar a coluna como "mista", sugerindo revisar os valores. É o comportamento mais seguro.
+- **Converter e manter** os valores que falharam, o que exige a coluna continuar texto e anula a conversão.
+- **Manter o comportamento atual**, mas exigir uma flag explícita (ex.: `--fix-types-drop-invalid`) para aceitar a perda.
+
+Em todos os casos, o `info` deveria sugerir `--fix-types` só para colunas em que todos os valores da amostra são números.
+
+### DT50 — CSV gravado não abre direito no Excel em português
+[files/__init__.py:54](../src/datatool/files/__init__.py#L54)
+
+O CSV de saída é sempre separado por vírgula e em UTF-8 sem BOM. Aberto com duplo clique no Excel em português, fica tudo numa coluna só (o Excel espera `;`) e com os acentos quebrados (sem BOM, o Excel assume cp1252). O público que a ferramenta mira limpa o arquivo e abre no Excel. Hoje o contorno é gravar em `.xlsx`.
+
+**Correção proposta:** opções de saída `--output-sep` e `--output-encoding` (com `utf-8-sig` para o Excel), ou um atalho `--excel-br` que liga `;`, vírgula decimal e UTF-8 com BOM. Precisa de decisão de interface. Uma alternativa sem opção nova é o CSV de saída herdar o separador e o encoding do CSV de entrada.
+
+### DT51 — Negativo contábil não é reconhecido como número **(reproduzido)**
+[inference.py:204](../src/datatool/inference.py#L204)
+
+`(1.234,56)`, o formato contábil para negativo usado por planilhas financeiras, falha no `--fix-types` e vira nulo (ver DT49). `-R$ 10,00` e `R$ -5,00` funcionam.
+
+**Correção proposta:** aceitar parênteses em volta do número como sinal negativo em `parse_number`, com teste para `(1.234,56)`, `(R$ 10,00)` e `(1,234.56)`.
+
 ---
 
 ## Ordem sugerida
 
-1. ~~**Rápidos e de alto impacto:** DT02, DT03, DT01, DT05, DT06, DT14, DT15, DT17, DT27.~~ Feito (DT14 em parte).
+Situação em 2026-10-01: DT01–DT36 e DT44–DT47 resolvidos; os demais itens de DT37–DT51 estão abertos.
+
+**Feito**
+
+1. ~~**Rápidos e de alto impacto:** DT02, DT03, DT01, DT05, DT06, DT14, DT15, DT17, DT27.~~ Feito. O DT14 começou em parte e foi completado depois (ver a "Resolução do restante" no item).
 2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13, e depois DT04 e DT19.~~ Feito.
 3. ~~**Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.~~ Feito.
 4. ~~**Higiene contínua:** DT16, DT18, DT24, DT25, DT26.~~ Feito.
-5. **Segunda revisão:** DT28 primeiro (um arquivo sujo não abrir, ou perder valores em silêncio, contradiz o propósito da ferramenta), depois DT29 e DT30 (rápidos, e evitam resultado enganoso), e então DT31, DT33, DT34, DT35, DT36 e DT32. Feito.
-6. **Pendências da implementação:** DT37 e DT38 primeiro (rápidos, e melhoram o que o agente e quem lê o log enxergam), depois DT40 (confiança no público do Windows) e DT39. DT42 só se a lentidão incomodar, e com conferência contra a leitura completa. DT41 e DT43 quando houver demanda.
+5. ~~**Segunda revisão:** DT28 primeiro, depois DT29 e DT30, e então DT31, DT33, DT34, DT35, DT36 e DT32.~~ Feito.
+6. ~~**Preparação e publicação da v0.1.0**~~ (não era um item desta lista). Feito e publicado no PyPI em 2026-09-30:
+   - descrições no `--help`;
+   - confirmação "Gravado …" no stderr ao gravar;
+   - metadados do PyPI;
+   - README e site com a instalação pelo PyPI;
+   - CHANGELOG;
+   - checagem da versão contra a tag no workflow de publicação.
+
+   Os comandos-esqueleto saíram do código, o que completa o DT06.
+
+**Próximos passos** (junta as pendências da implementação, DT37–DT43, e a análise pré-divulgação, DT44–DT51, numa ordem só)
+
+7. ~~**v0.1.1, antes de divulgar.**~~ Feito no código, falta publicar. Os quatro dão resultado errado sem aviso, ou impedem a leitura, nos arquivos que o produto promete entender.
+   - ~~**DT46** (UTF-16) e **DT45** (números além de 64 bits)~~: feitos, ainda não lançados (estão no CHANGELOG, em "Não lançado").
+   - ~~**DT47**: spec [022](022-excel-selecao-de-aba.md)~~: feito, ainda não lançado.
+   - ~~**DT44** (`1.500` lido como `1,5`)~~: feito, com a proposta para CSV separado por vírgula (continua no padrão americano).
+
+   Os quatro estão prontos e ainda não lançados: a v0.1.1 pode ser publicada.
+8. **Perda de dado e atritos de uso:**
+   - **DT49**: `--fix-types` apaga o que não converte. Precisa escolher entre as alternativas do item.
+   - **DT37** e **DT38**: rápidos; melhoram o log e a interface para agentes.
+   - **DT48**: nomes de coluna com espaço nas pontas.
+9. **Confiança e acabamento:**
+   - **DT40**: CI também em Windows e macOS.
+   - **DT39**: números do site escritos à mão. Já desatualizaram de novo: o site diz 317 testes e 21 specs, e hoje são 318 e 22.
+   - **DT50**: CSV que abre no Excel em português. Precisa de decisão de interface.
+10. **Quando houver demanda:** DT41 (limitações do SQLite), DT42 (custo da leitura completa, com conferência contra ela), DT43 (mensagens em inglês) e DT51 (negativo contábil).

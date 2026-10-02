@@ -3,7 +3,7 @@ from collections import namedtuple
 from .column_stats import profile as compute_profile
 from .execution_log import log
 from .formatting import format_int_ptbr
-from .loading import load_input, resolve_columns
+from .loading import load_input, resolve_columns, sheet_line
 from .reporting import CommandError, build_document
 
 ProfileResult = namedtuple(
@@ -73,9 +73,17 @@ def _column_profile_to_dict(column_profile, redact_values):
     }
 
 
-def run(filename, key=None, sep=None, encoding=None, columns=None, max_columns=None):
+def run(
+    filename,
+    key=None,
+    sep=None,
+    encoding=None,
+    columns=None,
+    max_columns=None,
+    sheet=None,
+):
     """Perfila o arquivo; levanta `CommandError` em entrada ou opção inválida."""
-    loaded = load_input(filename, sep, encoding)
+    loaded = load_input(filename, sep, encoding, sheet=sheet)
     df = loaded.df
 
     key_columns = resolve_columns(df, key, "--key") if key else None
@@ -143,6 +151,8 @@ def to_document(result, redact_values=False):
 def print_text(result, redact_values=False):
     stats = result.profile
     print(f"Arquivo: {result.input.filename}")
+    if line := sheet_line(result.input):
+        print(line)
     print(f"Linhas: {format_int_ptbr(stats['rows'])}")
     print(f"Colunas: {format_int_ptbr(stats['columns'])}")
     print(f"Linhas duplicadas: {format_int_ptbr(stats['duplicates_total'])}")

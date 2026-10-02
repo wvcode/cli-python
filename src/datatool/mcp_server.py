@@ -143,6 +143,7 @@ def build_server(root):
             "linhas duplicadas, colunas com formatos de data misturados, "
             "colunas numéricas guardadas como texto, CPF/CNPJ inválido — e "
             "sugere o comando `clean` que corrige cada problema encontrado."
+            " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
         ),
     )
     @logged("mcp info")
@@ -151,6 +152,7 @@ def build_server(root):
         sep: str | None = None,
         encoding: str | None = None,
         redact_values: bool = True,
+        sheet: str | None = None,
     ) -> CallToolResult:
         try:
             resolved = _validate_input(root, filename)
@@ -159,7 +161,9 @@ def build_server(root):
 
         return _run_tool(
             "info",
-            lambda: info_command.diagnose(resolved, sep=sep, encoding=encoding),
+            lambda: info_command.diagnose(
+                resolved, sep=sep, encoding=encoding, sheet=sheet
+            ),
             lambda result: info_command.to_document(result, redact_values),
         )
 
@@ -172,6 +176,7 @@ def build_server(root):
             "categóricas, cardinalidade e valores mais frequentes; e "
             "duplicidade de linhas (total e por chave). Em datasets largos, "
             "use `columns` ou `max_columns` para limitar a resposta."
+            " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
         ),
     )
     @logged("mcp profile")
@@ -183,6 +188,7 @@ def build_server(root):
         sep: str | None = None,
         encoding: str | None = None,
         redact_values: bool = True,
+        sheet: str | None = None,
     ) -> CallToolResult:
         try:
             resolved = _validate_input(root, filename)
@@ -198,6 +204,7 @@ def build_server(root):
                 encoding=encoding,
                 columns=columns,
                 max_columns=max_columns,
+                sheet=sheet,
             ),
             lambda result: profile_command.to_document(result, redact_values),
         )
@@ -211,6 +218,7 @@ def build_server(root):
             "extras, duplicidade por coluna-chave, inconsistência de "
             "capitalização e CPF/CNPJ inválido. Para aplicar correções, use "
             "datatool_clean_apply."
+            " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
         ),
     )
     @logged("mcp clean_diagnose")
@@ -219,6 +227,7 @@ def build_server(root):
         sep: str | None = None,
         encoding: str | None = None,
         redact_values: bool = True,
+        sheet: str | None = None,
     ) -> CallToolResult:
         try:
             resolved = _validate_input(root, filename)
@@ -227,7 +236,9 @@ def build_server(root):
 
         return _run_tool(
             "clean",
-            lambda: clean_command.diagnose(resolved, sep=sep, encoding=encoding),
+            lambda: clean_command.diagnose(
+                resolved, sep=sep, encoding=encoding, sheet=sheet
+            ),
             lambda result: clean_command.diagnosis_document(result, redact_values),
         )
 
@@ -244,6 +255,7 @@ def build_server(root):
             "menos uma operação precisa ser pedida — sem nenhuma, use "
             "datatool_clean_diagnose. Recusa sobrescrever um `output` já "
             "existente sem `overwrite=true`."
+            " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
         ),
     )
     @logged("mcp clean_apply")
@@ -271,6 +283,7 @@ def build_server(root):
         sep: str | None = None,
         encoding: str | None = None,
         redact_values: bool = True,
+        sheet: str | None = None,
     ) -> CallToolResult:
         options = clean_command.CleanOptions(
             trim=trim,
@@ -313,6 +326,7 @@ def build_server(root):
                 overwrite=overwrite,
                 sep=sep,
                 encoding=encoding,
+                sheet=sheet,
             ),
             lambda result: clean_command.result_document(result, redact_values),
         )
@@ -325,6 +339,7 @@ def build_server(root):
             "Parquet, Feather, Avro, SQLite), inferindo o formato pela "
             "extensão. `to_filename` precisa ser diferente de `filename`. "
             "Recusa sobrescrever uma saída existente sem `overwrite=true`."
+            " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
         ),
     )
     @logged("mcp convert")
@@ -336,6 +351,7 @@ def build_server(root):
         to_type: str | None = None,
         sep: str | None = None,
         encoding: str | None = None,
+        sheet: str | None = None,
     ) -> CallToolResult:
         try:
             resolved_input = _validate_input(root, filename)
@@ -357,6 +373,7 @@ def build_server(root):
                 sep=sep,
                 encoding=encoding,
                 overwrite=overwrite,
+                sheet=sheet,
             ),
             convert_command.to_document,
         )
