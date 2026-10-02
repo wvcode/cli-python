@@ -26,6 +26,10 @@ Uma spec por user story, derivadas de [ideia.md](ideia.md), na ordem sugerida de
 | 020 | [Servidor MCP sobre o CLI](020-mcp-server.md) | Integração (agentes) | Implementado | 003, 017, 019 |
 | 021 | [Ler o arquivo de entrada a partir de uma URL](021-leitura-via-url.md) | Conversão | Não implementado | 001, 017, 019, 020 |
 | 022 | [Escolher a aba de uma planilha Excel](022-excel-selecao-de-aba.md) | Conversão | Implementado | 001, 002, 019, 020 |
+| 023 | [Ver o efeito do `clean` sem gravar (`--dry-run`)](023-clean-dry-run.md) | Cleaning | Não implementado | 005-011, 019, 020 |
+| 024 | [Comparar dois datasets (`diff`)](024-diff-datasets.md) | Diagnóstico | Não implementado | 001, 003, 019, 020, 022 |
+| 025 | [Primeiras linhas e amostras (`head`/`sample`)](025-head-sample.md) | Conversão | Não implementado | 001, 019, 022 |
+| 026 | [Unir arquivos (`concat`/`join`)](026-concat-join.md) | Conversão | Não implementado (`join` adiado) | 001, 017, 019, 022 |
 
 As specs não implementadas foram revisadas em 2026-09-30 contra o código da v0.1.0. As mais antigas (004, 012–016) ganharam uma seção "Revisão", com o que mudou, e uma seção "Questões em aberto", com as decisões pendentes. A 021, escrita depois, só teve um ajuste de texto.
 

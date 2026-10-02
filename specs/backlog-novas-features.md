@@ -18,15 +18,15 @@ Os IDs usam o prefixo `F` para não colidir com a numeração das specs. Esforç
 | F04 | Seleção de aba em Excel (`--sheet`) | Código | Community | P | Alta | [022](022-excel-selecao-de-aba.md) |
 | F05 | Quality gate para CI (`datatool check`) | Ideia | Pro | M | Alta | — |
 | F06 | Mascaramento de dados pessoais (LGPD) | Mercado BR | Pro | M | Alta | — |
-| F07 | `--dry-run` no `clean` | Código | Community | P | Média | — |
-| F08 | Comparação entre dois datasets (`datatool diff`) | Novo | Community | M | Média | — |
+| F07 | `--dry-run` no `clean` | Código | Community | P | Média | [023](023-clean-dry-run.md) |
+| F08 | Comparação entre dois datasets (`datatool diff`) | Novo | Community | M | Média | [024](024-diff-datasets.md) |
 | F09 | Validação de schema declarado | Ideia | Pro | M | Média | — |
 | F10 | Processamento em lote (glob) | Ideia | Pro | M | Média | — |
-| F11 | Amostragem e visualização (`head`/`sample`) | Novo | Community | P | Média | — |
+| F11 | Amostragem e visualização (`head`/`sample`) | Novo | Community | P | Média | [025](025-head-sample.md) |
 | F12 | Arquivos grandes via modo lazy/streaming | Ideia | Pro | G | Média | — |
 | F13 | Histórico de operações e reprodutibilidade | Ideia | Pro | M | Baixa | — |
 | F14 | Conectores (PostgreSQL, S3) | Ideia | Team | G | Baixa | — |
-| F15 | Unir arquivos (`concat`/`join`) | Novo | Community | M | Baixa | — |
+| F15 | Unir arquivos (`concat`/`join`) | Novo | Community | M | Baixa | [026](026-concat-join.md) |
 | F16 | Servidor MCP sobre o CLI (agentes de IA) | Novo | Community | M | Alta | [020](020-mcp-server.md) |
 | F17 | Ler o arquivo de entrada a partir de uma URL | Novo | Community | M | Média | [021](021-leitura-via-url.md) |
 
@@ -190,6 +190,8 @@ datatool clean clientes.csv --mask-columns cpf,email --output clientes_anon.csv
 
 ### F07 — `--dry-run` no `clean`
 
+*Virou a spec [023](023-clean-dry-run.md), que também faz as operações de texto informarem quantos valores mudaram. A proposta abaixo é o registro original.*
+
 **Problema.** Hoje, para saber o efeito de `--remove-duplicates --fill-null ...` sem gerar arquivo, o usuário roda sem `--output` e recebe o DataFrame inteiro no stdout, que em arquivos grandes é ruído. Não há um jeito de ver só "o que mudaria".
 
 **Proposta.**
@@ -206,6 +208,8 @@ datatool clean clientes.csv --trim --remove-duplicates --dry-run
 ---
 
 ### F08 — Comparação entre dois datasets (`datatool diff`)
+
+*Virou a spec [024](024-diff-datasets.md). A proposta abaixo é o registro original.*
 
 **Problema.** Um caso muito comum: "o arquivo deste mês bate com o do mês passado?" ou "a limpeza alterou o que eu esperava?". Hoje isso exige carregar os dois arquivos em pandas.
 
@@ -260,6 +264,8 @@ A ideia cita "execução paralela" como Pro; faz sentido o lote sequencial ser C
 
 ### F11 — Amostragem e visualização (`head`/`sample`)
 
+*Virou a spec [025](025-head-sample.md). O problema descrito abaixo mudou desde o DT19: o `convert` sem destino imprime o arquivo inteiro em CSV, não um DataFrame truncado. A proposta abaixo é o registro original.*
+
 **Problema.** Para "dar uma olhada" em um Parquet ou SQLite, hoje o caminho é `datatool convert arquivo.parquet` sem saída, que imprime o DataFrame truncado do polars — funciona, mas não é óbvio e não permite escolher linhas/colunas.
 
 **Proposta.**
@@ -301,6 +307,8 @@ A ideia cita "histórico de operações" e "auditoria". Proposta: o `clean` grav
 Citados no plano Team da ideia. `convert` já tem a abstração certa (`read_file`/`save_file`, com um leitor e um gravador por `FileType` em `files/`); um conector seria mais um tipo, identificado por URI em vez de extensão (`postgresql://...`, `s3://bucket/arquivo.parquet`). Polars já suporta S3 nativamente em `scan_parquet`, e `pl.read_database_uri` cobre bancos. Baixa prioridade porque o posicionamento atual é "arquivos locais bagunçados", e conectores mudam o público-alvo.
 
 ### F15 — Unir arquivos (`concat`/`join`)
+
+*Virou a spec [026](026-concat-join.md), com o `concat` detalhado e a decisão entre `join` e um comando `sql` registrada como questão aberta. A proposta abaixo é o registro original.*
 
 ```bash
 datatool concat "vendas_*.csv" --output vendas_2025.parquet     # empilha arquivos com o mesmo schema

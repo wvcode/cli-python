@@ -327,7 +327,7 @@ datatool convert relatorio.xlsx clientes.csv --sheet 3
 - O texto mostra `Aba: Vendas 2025 (2 de 3)` logo depois de "Arquivo:", e o JSON traz `sheet` e `sheets` no resumo do arquivo
 - As sugestões do `info` incluem a aba, para o comando sugerido corrigir a aba certa (`datatool clean relatorio.xlsx --sheet 'Vendas 2025' --fix-types`)
 - Aba inexistente é erro (exit code 2) com a lista de abas; aba vazia pedida com `--sheet`, ou planilha sem nenhuma aba com dados, é erro com exit code 1
-- Ao gravar em `.xlsx`, o resultado tem uma aba só: gravar com `--overwrite` sobre a própria planilha de entrada descarta as outras abas dela
+- Ao gravar em `.xlsx`, o resultado tem uma aba só: gravar com `--overwrite` sobre a própria planilha de entrada descarta as outras abas dela (débito técnico DT52; até a correção, grave em outro arquivo)
 
 ### Log de execução
 

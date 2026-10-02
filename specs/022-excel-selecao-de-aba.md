@@ -94,7 +94,7 @@ datatool profile relatorio.xlsx --sheet "Vendas 2025" --format json
 - **Ler todas as abas de uma vez** (`--all-sheets`, um diagnóstico por aba): faz parte do `inspect` da [013](013-excel-inspect-auto.md)
 - **Linha do cabeçalho fora da primeira linha** (`--header-row`): também na [013](013-excel-inspect-auto.md)
 - **Nome da aba na gravação** (`convert dados.csv saida.xlsx` com a aba chamada "Dados", ou acrescentar uma aba a uma planilha existente)
-- **Escolha de tabela no SQLite:** hoje a tabela vem do nome do arquivo, ou é a única do banco. É o mesmo tipo de problema e poderia ganhar uma opção `--table` no mesmo padrão, numa spec própria.
+- **Escolha de tabela no SQLite:** hoje a tabela vem do nome do arquivo, ou é a única do banco. É o mesmo tipo de problema e poderia ganhar uma opção `--table` no mesmo padrão, numa spec própria. *(Registrado como débito técnico DT53.)*
 - `.xls` (Excel antigo) e `.ods`
 
 ## Decisões confirmadas

@@ -6,7 +6,7 @@ Itens marcados com **(reproduzido)** foram confirmados executando o CLI. Feature
 
 Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = resolvido · ◐ = resolvido em parte (ver a nota "Resolução" no item).
 
-Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT47 estão resolvidos e os demais, abertos.
+Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT47 estão resolvidos e os demais, abertos. Os itens DT52–DT55 são [ideias soltas](#ideias-soltas-registradas-2026-10-02) que estavam dentro de outras specs, registradas como débito, e estão abertos.
 
 ## Resumo
 
@@ -662,7 +662,7 @@ Só a primeira aba é lida, sem aviso. Numa planilha "Resumo" / "Vendas 2025" / 
   - as 5 ferramentas do MCP.
 
   34 deles falham na versão anterior; os 3 que passam protegem o comportamento de planilhas de uma aba e de outros formatos. A saída dos 72 comandos do snapshot não mudou.
-- **Risco que ficou mais visível:** gravar em `.xlsx` produz uma planilha de uma aba só. Com `--sheet` e `--overwrite` sobre a própria planilha de entrada, as outras abas se perdem. Isso já acontecia antes, mas agora é mais provável, porque a pessoa escolhe uma aba que não é a primeira. Está documentado no README; recusar ou avisar nesse caso fica como pendência.
+- **Risco que ficou mais visível** (registrado como DT52): gravar em `.xlsx` produz uma planilha de uma aba só. Com `--sheet` e `--overwrite` sobre a própria planilha de entrada, as outras abas se perdem. Isso já acontecia antes, mas agora é mais provável, porque a pessoa escolhe uma aba que não é a primeira. Está documentado no README; recusar ou avisar nesse caso fica como pendência.
 
 ### DT48 — Coluna com espaço nas pontas do nome não pode ser referenciada **(reproduzido)**
 [loading.py:99-103](../src/datatool/loading.py#L99-L103)
@@ -697,11 +697,70 @@ O CSV de saída é sempre separado por vírgula e em UTF-8 sem BOM. Aberto com d
 
 **Correção proposta:** aceitar parênteses em volta do número como sinal negativo em `parse_number`, com teste para `(1.234,56)`, `(R$ 10,00)` e `(1,234.56)`.
 
+## Ideias soltas registradas (2026-10-02)
+
+Pontos que apareceram como "fora de escopo" ou "pendência" dentro de outras specs e débitos, sem item próprio. Os dois primeiros foram reproduzidos na v0.1.2 e são defeitos; os dois últimos são lacunas de funcionalidade.
+
+| ID | Item | Área | Severidade | Esforço |
+|----|------|------|------------|---------|
+| DT52 | Gravar sobre uma planilha de várias abas apaga as outras abas | IO | Alta | P |
+| DT53 | SQLite com várias tabelas não abre, e não há como escolher a tabela | IO | Média | P |
+| DT54 | Sem `tail` para ver as últimas linhas | CLI | Baixa | P |
+| DT55 | Sem como empilhar as abas de uma mesma planilha | CLI | Baixa | P |
+
+### DT52 — Gravar sobre uma planilha de várias abas apaga as outras abas **(reproduzido)**
+[loading.py](../src/datatool/loading.py) (`check_output`, `write_output`)
+
+Gravar em `.xlsx` sempre produz uma planilha de uma aba só, chamada "Sheet1". Com `--overwrite` sobre a própria planilha de entrada, as outras abas se perdem, sem aviso e com exit 0:
+
+```
+$ datatool clean relatorio.xlsx --sheet "Vendas 2025" --trim --output relatorio.xlsx --overwrite
+Gravado relatorio.xlsx (xlsx): 1 linhas, 2 colunas
+abas antes:  ['Resumo', 'Vendas 2025', 'Clientes']
+abas depois: ['Sheet1']
+```
+
+O defeito já existia, mas ficou mais provável com a spec 022. Antes, só a primeira aba era lida; agora a pessoa escolhe uma aba do meio e grava de volta no mesmo arquivo, esperando que só aquela aba mude. Está documentado no README desde a v0.1.2, mas documentação não impede a perda.
+
+**Correção proposta:**
+- **Recusar:** quando o destino é o próprio arquivo de entrada, o formato é xlsx e a planilha tem mais de uma aba, recusar com exit 2 antes de processar ("relatorio.xlsx tem 3 abas; gravar nele apagaria as outras. Grave em outro arquivo."). Vale para `clean --output` e para `convert`, e o servidor MCP já recusa gravar sobre a entrada.
+- **Manter o nome:** ao gravar em xlsx a partir de uma aba, usar o nome da aba lida em vez de "Sheet1".
+- **Fora daqui:** substituir só a aba dentro da planilha existente exigiria uma biblioteca que edita xlsx (o xlsxwriter só cria arquivos novos). Fica para uma spec própria, se houver demanda.
+
+### DT53 — SQLite com várias tabelas não abre **(reproduzido)**
+[files/sqlite.py:69-88](../src/datatool/files/sqlite.py#L69-L88)
+
+O leitor de SQLite usa a tabela com o nome do arquivo (`vendas.db` → `vendas`) ou, se o banco tem uma tabela só, essa. Um banco com várias tabelas e nenhuma com o nome do arquivo não abre, em nenhum comando, e não há opção para escolher:
+
+```
+$ datatool info base.db
+Não foi possível ler base.db como sqlite: Não foi possível decidir qual tabela ler de base.db: tabelas encontradas: ['clientes', 'pedidos'].
+exit=1
+```
+
+A mensagem repete o prefixo, mostra a lista no formato do Python e sai com exit 1 (falha de leitura), quando o problema é de escolha (exit 2). É a mesma situação que a spec 022 resolveu para as abas do Excel, que a citou como fora de escopo.
+
+**Correção proposta:** uma opção `--table` no mesmo padrão do `--sheet` (nome exato; erro com exit 2 e a lista de tabelas quando não existe), em `convert`, `info`, `profile` e `clean`, e o parâmetro `table` no servidor MCP. Sem `--table` e com várias tabelas, o erro passa a ter exit 2, a lista em texto (`Tabelas: clientes, pedidos.`) e a sugestão de `--table`. O JSON pode trazer `table`/`tables` no resumo do arquivo, como `sheet`/`sheets`.
+
+### DT54 — Sem `tail` para ver as últimas linhas
+[025-head-sample.md](025-head-sample.md)
+
+A spec 025 (`head`/`sample`) deixou o `tail` fora do escopo. Em arquivos que crescem por anexação (logs, extrações diárias), as últimas linhas costumam ser as que interessam. Para CSV o `tail` do shell resolve; para Parquet, SQLite e Excel, não há alternativa.
+
+**Correção proposta:** `datatool tail arquivo -n N`, com as mesmas opções e saídas do `head`, implementado junto com a 025 ou logo depois. Também lê o arquivo inteiro (o modo lazy é o item F12).
+
+### DT55 — Sem como empilhar as abas de uma mesma planilha
+[026-concat-join.md](026-concat-join.md)
+
+Um formato comum no Excel corporativo é uma aba por mês ou por filial no mesmo arquivo. A spec 026 (`concat`) empilha arquivos, mas deixou as abas de uma mesma planilha fora do escopo. O contorno é converter cada aba com `--sheet` e depois concatenar os arquivos gerados.
+
+**Correção proposta:** `concat relatorio.xlsx --all-sheets` empilha as abas visíveis com dados, com as regras de colunas e tipos do `concat`. Com `--source-column`, a coluna de origem traz o nome da aba. O `--all-sheets` do `info`, citado na spec 013, pode reaproveitar a mesma listagem de abas.
+
 ---
 
 ## Ordem sugerida
 
-Situação em 2026-10-01: DT01–DT36 e DT44–DT47 resolvidos; os demais itens de DT37–DT51 estão abertos.
+Situação em 2026-10-02, depois da publicação da v0.1.2: DT01–DT36 e DT44–DT47 resolvidos e publicados; os demais itens de DT37–DT55 estão abertos.
 
 **Feito**
 
@@ -720,20 +779,20 @@ Situação em 2026-10-01: DT01–DT36 e DT44–DT47 resolvidos; os demais itens 
 
    Os comandos-esqueleto saíram do código, o que completa o DT06.
 
-**Próximos passos** (junta as pendências da implementação, DT37–DT43, e a análise pré-divulgação, DT44–DT51, numa ordem só)
+**Próximos passos** (junta as pendências da implementação, DT37–DT43, a análise pré-divulgação, DT44–DT51, e as ideias soltas, DT52–DT55, numa ordem só)
 
-7. ~~**v0.1.1, antes de divulgar.**~~ Feito no código, falta publicar. Os quatro dão resultado errado sem aviso, ou impedem a leitura, nos arquivos que o produto promete entender.
-   - ~~**DT46** (UTF-16) e **DT45** (números além de 64 bits)~~: feitos, ainda não lançados (estão no CHANGELOG, em "Não lançado").
-   - ~~**DT47**: spec [022](022-excel-selecao-de-aba.md)~~: feito, ainda não lançado.
-   - ~~**DT44** (`1.500` lido como `1,5`)~~: feito, com a proposta para CSV separado por vírgula (continua no padrão americano).
-
-   Os quatro estão prontos e ainda não lançados: a v0.1.1 pode ser publicada.
+7. ~~**Correções antes de divulgar: DT44, DT45, DT46 e DT47.**~~ Feito e **publicado na v0.1.2** (PyPI, 2026-10-02; tag `v0.1.2`). A versão planejada como v0.1.1 saiu como 0.1.2, e não houve 0.1.1 publicada. Os quatro davam resultado errado sem aviso, ou impediam a leitura, nos arquivos que o produto promete entender:
+   - ~~**DT46**~~ (UTF-16) e ~~**DT45**~~ (números além de 64 bits);
+   - ~~**DT47**~~: spec [022](022-excel-selecao-de-aba.md), seleção de aba em Excel;
+   - ~~**DT44**~~ (`1.500` lido como `1,5`): CSV separado por vírgula continua no padrão americano.
 8. **Perda de dado e atritos de uso:**
+   - **DT52**: gravar sobre uma planilha de várias abas apaga as outras, sem aviso. É o primeiro da lista: perda de dado silenciosa, e a correção (recusar) é pequena.
+   - **DT53**: SQLite com várias tabelas não abre; `--table` no padrão do `--sheet`.
    - **DT49**: `--fix-types` apaga o que não converte. Precisa escolher entre as alternativas do item.
    - **DT37** e **DT38**: rápidos; melhoram o log e a interface para agentes.
    - **DT48**: nomes de coluna com espaço nas pontas.
 9. **Confiança e acabamento:**
    - **DT40**: CI também em Windows e macOS.
-   - **DT39**: números do site escritos à mão. Já desatualizaram de novo: o site diz 317 testes e 21 specs, e hoje são 318 e 22.
+   - **DT39**: números do site escritos à mão. Desatualizaram duas vezes depois do registro, e foram corrigidos à mão de novo na publicação da v0.1.2 (390 testes, 22 specs) e em 2026-10-02, depois das specs 023–026 (26 specs). A correção definitiva continua pendente.
    - **DT50**: CSV que abre no Excel em português. Precisa de decisão de interface.
-10. **Quando houver demanda:** DT41 (limitações do SQLite), DT42 (custo da leitura completa, com conferência contra ela), DT43 (mensagens em inglês) e DT51 (negativo contábil).
+10. **Quando houver demanda:** DT41 (limitações do SQLite), DT42 (custo da leitura completa, com conferência contra ela), DT43 (mensagens em inglês) e DT51 (negativo contábil). DT54 (`tail`) e DT55 (abas no `concat`) junto com as specs 025 e 026, quando forem implementadas.
