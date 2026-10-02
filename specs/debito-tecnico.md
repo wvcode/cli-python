@@ -6,7 +6,7 @@ Itens marcados com **(reproduzido)** foram confirmados executando o CLI. Feature
 
 Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = resolvido · ◐ = resolvido em parte (ver a nota "Resolução" no item).
 
-Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT47 estão resolvidos e os demais, abertos. Os itens DT52–DT55 são [ideias soltas](#ideias-soltas-registradas-2026-10-02) que estavam dentro de outras specs, registradas como débito, e estão abertos.
+Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT47 estão resolvidos e os demais, abertos. Os itens DT52–DT55 são [ideias soltas](#ideias-soltas-registradas-2026-10-02) que estavam dentro de outras specs, registradas como débito, e estão abertos. Os itens DT56–DT62 vêm da [revisão de segurança](#revisão-de-segurança-2026-10-02) e estão abertos. A ordem de implementação dos itens abertos está no [plano de implementação](plano-implementacao.md).
 
 ## Resumo
 
@@ -756,43 +756,74 @@ Um formato comum no Excel corporativo é uma aba por mês ou por filial no mesmo
 
 **Correção proposta:** `concat relatorio.xlsx --all-sheets` empilha as abas visíveis com dados, com as regras de colunas e tipos do `concat`. Com `--source-column`, a coluna de origem traz o nome da aba. O `--all-sheets` do `info`, citado na spec 013, pode reaproveitar a mesma listagem de abas.
 
----
+## Revisão de segurança (2026-10-02)
 
-## Ordem sugerida
+Revisão de segurança feita sobre a v0.1.2 (commit `1701169`), cobrindo o código em `src/`, as dependências e os workflows do CI. Nada saiu como crítico ou alto: os itens abaixo são endurecimento.
 
-Situação em 2026-10-02, depois da publicação da v0.1.2: DT01–DT36 e DT44–DT47 resolvidos e publicados; os demais itens de DT37–DT55 estão abertos.
+| ID | Item | Área | Severidade | Esforço |
+|----|------|------|------------|---------|
+| DT56 | Workflows sem `permissions:` explícito | CI | Média | P |
+| DT57 | Actions fixadas por tag, não por SHA | CI | Baixa | P |
+| DT58 | Servidor MCP sem limite de tamanho de arquivo | MCP | Baixa | P |
+| DT59 | `redact_values` no MCP não é barreira de privacidade | MCP/Docs | Baixa | P |
+| DT60 | CSV de saída mantém valores `=...` (CSV injection) | IO | Baixa | P |
+| DT61 | Corrida entre validar o caminho e gravar no sandbox do MCP | MCP | Baixa | M |
+| DT62 | Sem teste de regressão para fuga do sandbox por link simbólico | Testes | Baixa | P |
 
-**Feito**
+O que resistiu bem, e não virou item:
+- dependências do `uv.lock` (todos os extras): `pip-audit` sem nenhuma vulnerabilidade conhecida;
+- nada de `eval`, `exec`, `pickle`, `subprocess` ou acesso à rede em `src/` (a leitura por URL, spec 021, ainda não existe);
+- SQLite: identificadores escapados por `_quote` e valores por placeholders `?`, sem SQL injection pelo nome do arquivo ou da coluna (ver DT05);
+- sandbox do MCP: link simbólico para diretório, para arquivo e para destino novo fora da raiz, todos recusados;
+- Excel: um CSV com `=HYPERLINK(...)` e `=1+1` convertido para xlsx sai com os valores como texto, não como fórmula;
+- nenhum token ou chave no histórico do git;
+- publicação no PyPI por trusted publishing (OIDC) com environment `pypi`, e a checagem da versão usa variáveis de ambiente, não `${{ }}` dentro do `run:`.
 
-1. ~~**Rápidos e de alto impacto:** DT02, DT03, DT01, DT05, DT06, DT14, DT15, DT17, DT27.~~ Feito. O DT14 começou em parte e foi completado depois (ver a "Resolução do restante" no item).
-2. ~~**Refatoração base:** DT09 → DT10 → DT08 → DT11/DT13, e depois DT04 e DT19.~~ Feito.
-3. ~~**Consistência do produto:** DT07 + DT12 (módulo único de inferência), DT20.~~ Feito.
-4. ~~**Higiene contínua:** DT16, DT18, DT24, DT25, DT26.~~ Feito.
-5. ~~**Segunda revisão:** DT28 primeiro, depois DT29 e DT30, e então DT31, DT33, DT34, DT35, DT36 e DT32.~~ Feito.
-6. ~~**Preparação e publicação da v0.1.0**~~ (não era um item desta lista). Feito e publicado no PyPI em 2026-09-30:
-   - descrições no `--help`;
-   - confirmação "Gravado …" no stderr ao gravar;
-   - metadados do PyPI;
-   - README e site com a instalação pelo PyPI;
-   - CHANGELOG;
-   - checagem da versão contra a tag no workflow de publicação.
+### DT56 — Workflows sem `permissions:` explícito
+[ci.yml](../.github/workflows/ci.yml), [publish-pypi.yml](../.github/workflows/publish-pypi.yml)
 
-   Os comandos-esqueleto saíram do código, o que completa o DT06.
+O `ci.yml` inteiro e os jobs `test` e `build` do `publish-pypi.yml` não declaram `permissions:`, então o `GITHUB_TOKEN` herda o padrão do repositório, que pode ser de escrita. Um passo comprometido (dependência instalada com `pip install`, action de terceiros) teria escrita no repositório. Só o job `publish` e o `deploy-pages.yml` já restringem.
 
-**Próximos passos** (junta as pendências da implementação, DT37–DT43, a análise pré-divulgação, DT44–DT51, e as ideias soltas, DT52–DT55, numa ordem só)
+**Correção proposta:** `permissions: contents: read` no topo do `ci.yml` e do `publish-pypi.yml`. O job `publish` continua pedindo `id-token: write` no próprio job.
 
-7. ~~**Correções antes de divulgar: DT44, DT45, DT46 e DT47.**~~ Feito e **publicado na v0.1.2** (PyPI, 2026-10-02; tag `v0.1.2`). A versão planejada como v0.1.1 saiu como 0.1.2, e não houve 0.1.1 publicada. Os quatro davam resultado errado sem aviso, ou impediam a leitura, nos arquivos que o produto promete entender:
-   - ~~**DT46**~~ (UTF-16) e ~~**DT45**~~ (números além de 64 bits);
-   - ~~**DT47**~~: spec [022](022-excel-selecao-de-aba.md), seleção de aba em Excel;
-   - ~~**DT44**~~ (`1.500` lido como `1,5`): CSV separado por vírgula continua no padrão americano.
-8. **Perda de dado e atritos de uso:**
-   - **DT52**: gravar sobre uma planilha de várias abas apaga as outras, sem aviso. É o primeiro da lista: perda de dado silenciosa, e a correção (recusar) é pequena.
-   - **DT53**: SQLite com várias tabelas não abre; `--table` no padrão do `--sheet`.
-   - **DT49**: `--fix-types` apaga o que não converte. Precisa escolher entre as alternativas do item.
-   - **DT37** e **DT38**: rápidos; melhoram o log e a interface para agentes.
-   - **DT48**: nomes de coluna com espaço nas pontas.
-9. **Confiança e acabamento:**
-   - **DT40**: CI também em Windows e macOS.
-   - **DT39**: números do site escritos à mão. Desatualizaram duas vezes depois do registro, e foram corrigidos à mão de novo na publicação da v0.1.2 (390 testes, 22 specs) e em 2026-10-02, depois das specs 023–026 (26 specs). A correção definitiva continua pendente.
-   - **DT50**: CSV que abre no Excel em português. Precisa de decisão de interface.
-10. **Quando houver demanda:** DT41 (limitações do SQLite), DT42 (custo da leitura completa, com conferência contra ela), DT43 (mensagens em inglês) e DT51 (negativo contábil). DT54 (`tail`) e DT55 (abas no `concat`) junto com as specs 025 e 026, quando forem implementadas.
+### DT57 — Actions fixadas por tag, não por SHA
+[.github/workflows/](../.github/workflows/)
+
+As actions são referenciadas por tag móvel (`actions/checkout@v4`, `pypa/gh-action-pypi-publish@release/v1`). Se uma delas for comprometida e a tag, movida, o código novo roda no pipeline, inclusive no de publicação.
+
+**Correção proposta:** fixar por SHA completo, com a versão num comentário (`uses: actions/checkout@<sha> # v4.x.y`), ao menos no `publish-pypi.yml`. O Dependabot (`package-ecosystem: github-actions`) mantém os SHAs atualizados.
+
+### DT58 — Servidor MCP sem limite de tamanho de arquivo
+[mcp_server.py:43](../src/datatool/mcp_server.py#L43)
+
+Toda leitura carrega o arquivo inteiro na memória (`infer_schema_length=None`, ver DT42). Um agente pode apontar para um arquivo enorme ou um xlsx "zip bomb" dentro da raiz e travar a máquina. O impacto é só local (indisponibilidade), já que o servidor roda por stdio para um único usuário.
+
+**Correção proposta:** um teto de tamanho em `_validate_input` (ex.: `--max-file-size` no `datatool-mcp`, com um padrão generoso), recusado como erro de sandbox (exit 2).
+
+### DT59 — `redact_values` no MCP não é barreira de privacidade
+[mcp_server.py:154](../src/datatool/mcp_server.py#L154), [loading.py:156](../src/datatool/loading.py#L156)
+
+As ferramentas do MCP têm `redact_values=True` como padrão, mas o parâmetro é escolhido pelo próprio agente, que pode passar `false` e ver os valores das células. Além disso, as mensagens de erro de leitura repassam o texto do polars, que pode trazer valores do arquivo independentemente do `redact_values` (não verificado). Quem usa o padrão para manter dados pessoais longe do provedor do modelo pode achar que está protegido.
+
+**Correção proposta:** documentar no README e na spec 020 que `redact_values` reduz o que vai para a conversa, mas não impede o agente de ver os dados. Se for preciso garantir, uma opção do servidor (ex.: `datatool-mcp --force-redact`) que ignora o parâmetro. Conferir se as mensagens de erro do polars trazem valores e, se trouxerem, tirá-los quando houver redação.
+
+### DT60 — CSV de saída mantém valores `=...` (CSV injection)
+[files/__init__.py:47](../src/datatool/files/__init__.py#L47)
+
+Um valor como `=HYPERLINK("http://...")` na entrada sai igual no CSV gravado, e o Excel o executa como fórmula ao abrir. No xlsx isso não acontece (o valor é gravado como texto). O dado já vinha do usuário, então o risco é baixo, mas o `clean` pode ser entendido como "sanitizar".
+
+**Correção proposta:** pelo menos documentar. Se houver demanda, um diagnóstico no `info`/`clean` para células que começam com `=`, `+`, `-` ou `@`, e uma operação opcional que as neutraliza com um `'` na frente.
+
+### DT61 — Corrida entre validar o caminho e gravar no sandbox do MCP
+[mcp_server.py:33-60](../src/datatool/mcp_server.py#L33-L60)
+
+`_resolve` valida o caminho já resolvido, mas a leitura e a gravação acontecem depois. Se alguém trocar um diretório da raiz por um link simbólico nesse intervalo, a gravação pode sair da raiz. Explorar isso exige acesso local de escrita à raiz, o que já dá acesso aos arquivos.
+
+**Correção proposta:** só se o servidor passar a rodar num ambiente compartilhado. Nesse caso, abrir os arquivos com `O_NOFOLLOW`/descritores relativos à raiz, ou reconferir o caminho resolvido depois de abrir.
+
+### DT62 — Sem teste de regressão para fuga do sandbox por link simbólico
+[tests/test_mcp_server.py](../tests/test_mcp_server.py)
+
+O sandbox recusa links simbólicos que levam para fora da raiz (conferido nesta revisão e na análise pré-divulgação), porque `_resolve` usa `Path.resolve()`. Os testes só cobrem `../` e caminhos absolutos. Uma troca de `resolve()` por `absolute()` ou `normpath` passaria na suíte e abriria o sandbox.
+
+**Correção proposta:** testes com link para diretório fora da raiz (`link/arquivo.csv`), link para arquivo fora da raiz e destino novo dentro de um link, na leitura e na gravação.
