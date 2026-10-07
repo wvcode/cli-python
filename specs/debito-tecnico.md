@@ -6,7 +6,7 @@ Itens marcados com **(reproduzido)** foram confirmados executando o CLI. Feature
 
 Esforço: **P** = horas · **M** = 1–2 dias · **G** = vários dias. ✅ = resolvido · ◐ = resolvido em parte (ver a nota "Resolução" no item).
 
-Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30) e estão abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT47 estão resolvidos e os demais, abertos. Os itens DT52–DT55 são [ideias soltas](#ideias-soltas-registradas-2026-10-02) que estavam dentro de outras specs, registradas como débito, e estão abertos. Os itens DT56–DT62 vêm da [revisão de segurança](#revisão-de-segurança-2026-10-02) e estão abertos. A ordem de implementação dos itens abertos está no [plano de implementação](plano-implementacao.md).
+Os itens DT01–DT27 vêm da primeira revisão e estão todos resolvidos. Os itens DT28–DT36 vêm da [segunda revisão](#segunda-revisão-2026-09-30), feita depois deles, e também estão todos resolvidos. Os itens DT37–DT43 são [pendências anotadas durante a implementação](#pendências-da-implementação-2026-09-30); DT37 e DT38 estão resolvidos e os demais, abertos. Os itens DT44–DT51 vêm da [análise pré-divulgação](#análise-pré-divulgação-2026-09-30) da v0.1.0; DT44 a DT49 estão resolvidos e DT50 e DT51, abertos. Os itens DT52–DT55 são [ideias soltas](#ideias-soltas-registradas-2026-10-02) que estavam dentro de outras specs, registradas como débito; DT52 e DT53 estão resolvidos e DT54 e DT55, abertos. Os itens DT56–DT62 vêm da [revisão de segurança](#revisão-de-segurança-2026-10-02) e estão abertos. A ordem de implementação dos itens abertos está no [plano de implementação](plano-implementacao.md).
 
 ## Resumo
 
@@ -454,8 +454,8 @@ Não vêm de uma revisão nova. São sobras anotadas enquanto DT14, DT15, DT28, 
 
 | ID | Item | Área | Severidade | Esforço |
 |----|------|------|------------|---------|
-| DT37 | Erro de sandbox do MCP não diz o motivo no log | Log/MCP | Baixa | P |
-| DT38 | Parâmetro `columns` do `datatool_clean_apply` com o nome antigo | MCP | Baixa | P |
+| DT37 ✅ | Erro de sandbox do MCP não diz o motivo no log | Log/MCP | Baixa | P |
+| DT38 ✅ | Parâmetro `columns` do `datatool_clean_apply` com o nome antigo | MCP | Baixa | P |
 | DT39 | Números do site escritos à mão | Docs | Baixa | P |
 | DT40 | CI só em Linux | CI/Testes | Baixa | P |
 | DT41 | SQLite: fuso, nanossegundos e memória na leitura | IO | Baixa | M |
@@ -469,12 +469,16 @@ Os erros de comando passam por `error_document`, que grava a mensagem no log em 
 
 **Correção:** `_sandbox_error_result` passa pelo mesmo `error_document`, com um `CommandError(mensagem, 2)`. As mensagens de sandbox têm só caminhos, nenhum valor de célula, então a regra de privacidade do log continua valendo. Testar que a linha `ERROR` aparece para cada um dos três casos.
 
+**Resolução:** `_sandbox_error_result` passa pelo `error_document` com um `CommandError(mensagem, 2)`, e a linha `ERROR` sai no log com o motivo. Também vale para o erro de chamada sem operação do `datatool_clean_apply`, que usa a mesma função. Teste `test_sandbox_errors_log_the_reason` nos três casos (caminho fora da raiz, destino igual à entrada, destino existente sem `overwrite=true`).
+
 ### DT38 — Parâmetro `columns` do `datatool_clean_apply` com o nome antigo
 [mcp_server.py:262](../src/datatool/mcp_server.py#L262)
 
 No DT15, a opção `--columns` do `clean` virou `--drop-null-columns` no CLI (com `--columns` aceito como alias). O servidor MCP manteve `columns`, para não quebrar clientes. Para um agente, `columns` sugere "as colunas em que as operações atuam", mas o parâmetro só vale para `drop_null`. É o tipo de ambiguidade que leva um modelo a passar o argumento errado.
 
 **Correção:** aceitar `drop_null_columns`, manter `columns` como alias obsoleto (dito na descrição da ferramenta) e recusar os dois juntos com erro. Remover o alias numa versão futura, anotada no changelog.
+
+**Resolução:** o `datatool_clean_apply` aceita `drop_null_columns`; `columns` continua aceito como alias obsoleto, dito na descrição da ferramenta e no CHANGELOG (seção "Obsoleto" da 0.1.3), e os dois juntos são erro (exit code 2). Testes para o nome novo, o alias e os dois juntos.
 
 ### DT39 — Números do site escritos à mão
 [website/index.html:530](../website/index.html#L530)
@@ -546,8 +550,8 @@ Os itens DT44–DT47 têm uma coisa em comum: dão **resultado errado sem aviso,
 | DT45 ✅ | Número com mais de 38 dígitos (chave de NF-e) impede a leitura do CSV | IO | Alta | P |
 | DT46 ✅ | CSV em UTF-16 lido como lixo, com "Nenhum problema encontrado" | IO | Alta | P |
 | DT47 ✅ | Excel: aba errada lida em silêncio, e capa vazia impede a leitura | IO | Alta | M |
-| DT48 | Coluna com espaço nas pontas do nome não pode ser referenciada | CLI | Média | P |
-| DT49 | `--fix-types` apaga os valores que não converte, inclusive em colunas de código | clean | Média | P |
+| DT48 ✅ | Coluna com espaço nas pontas do nome não pode ser referenciada | CLI | Média | P |
+| DT49 ✅ | `--fix-types` apaga os valores que não converte, inclusive em colunas de código | clean | Média | P |
 | DT50 | CSV gravado não abre direito no Excel em português | IO | Média | M |
 | DT51 | Negativo contábil `(1.234,56)` não é reconhecido como número | clean | Baixa | P |
 
@@ -671,6 +675,8 @@ Exportações do Excel costumam trazer cabeçalhos como `" email "` ou `"Nome "`
 
 **Correção proposta:** em `resolve_columns`, quando o nome exato não existe, aceitar a coluna cujo nome sem espaços nas pontas é igual ao pedido, desde que só uma coluna case. O diagnóstico do `clean` pode apontar "nomes de coluna com espaços extras" e sugerir o renomear.
 
+**Resolução:** `find_column` em `loading.py` acha a coluna pelo nome sem os espaços nas pontas, e `resolve_columns` devolve os nomes como estão no arquivo. Vale para `--key`, `--columns`, `--remove-columns`, `--rename-columns`, `--drop-null-columns`, `--date-columns`, `--document-columns` e `--fill-null coluna:valor`. Se duas colunas casarem (`"email"` e `" email "`), é erro (exit code 2), mesmo que uma delas tenha o nome exato, para não escolher uma em silêncio. O diagnóstico do `clean` aponta o nome (categoria `column_name_whitespace`, `count_unit` `columns`) com o `--rename-columns` que tira os espaços. Testes em `tests/test_column_names.py`.
+
 ### DT49 — `--fix-types` apaga os valores que não converte **(reproduzido)**
 [clean.py:234-263](../src/datatool/clean.py#L234-L263)
 
@@ -682,6 +688,8 @@ Uma coluna de códigos (`1000`, `1001`, …, `A12`, `B7`) passa pelo critério "
 - **Manter o comportamento atual**, mas exigir uma flag explícita (ex.: `--fix-types-drop-invalid`) para aceitar a perda.
 
 Em todos os casos, o `info` deveria sugerir `--fix-types` só para colunas em que todos os valores da amostra são números.
+
+**Resolução:** decidida a primeira opção, **não converter**. Uma coluna com algum valor que não é número continua como texto, sem perder nada; o relatório a aponta (`"codigo": não convertida, 2 valores não são números`) com os valores, e o JSON ganha `converted: false` e `type: null`. O `info` reporta essas colunas como `mixed_types`, sem sugestão; `types`, que sugere `--fix-types`, fica para as colunas em que todos os valores (da coluna inteira, não só da amostra) são números, ou seja, as que o `--fix-types` converte. Consequência: uma coluna com `N/D` no lugar de números, que antes virava número com nulos, agora fica como texto, e o CLI não tem como transformar esses marcadores em nulo.
 
 ### DT50 — CSV gravado não abre direito no Excel em português
 [files/__init__.py:54](../src/datatool/files/__init__.py#L54)
@@ -703,8 +711,8 @@ Pontos que apareceram como "fora de escopo" ou "pendência" dentro de outras spe
 
 | ID | Item | Área | Severidade | Esforço |
 |----|------|------|------------|---------|
-| DT52 | Gravar sobre uma planilha de várias abas apaga as outras abas | IO | Alta | P |
-| DT53 | SQLite com várias tabelas não abre, e não há como escolher a tabela | IO | Média | P |
+| DT52 ✅ | Gravar sobre uma planilha de várias abas apaga as outras abas | IO | Alta | P |
+| DT53 ✅ | SQLite com várias tabelas não abre, e não há como escolher a tabela | IO | Média | P |
 | DT54 | Sem `tail` para ver as últimas linhas | CLI | Baixa | P |
 | DT55 | Sem como empilhar as abas de uma mesma planilha | CLI | Baixa | P |
 
@@ -727,6 +735,8 @@ O defeito já existia, mas ficou mais provável com a spec 022. Antes, só a pri
 - **Manter o nome:** ao gravar em xlsx a partir de uma aba, usar o nome da aba lida em vez de "Sheet1".
 - **Fora daqui:** substituir só a aba dentro da planilha existente exigiria uma biblioteca que edita xlsx (o xlsxwriter só cria arquivos novos). Fica para uma spec própria, se houver demanda.
 
+**Resolução:** a recusa e o nome da aba, como proposto. `check_output` recebe a entrada lida e recusa (exit code 2) quando o destino é o mesmo arquivo (`os.path.samefile`) e a planilha tem mais de uma aba, contando as ocultas. A recusa vem antes da checagem de `--overwrite`, para a mensagem não levar a pessoa a acrescentar `--overwrite`. Vale para qualquer formato de saída. Ao gravar xlsx, a aba usa o nome da aba lida. Testes em `tests/test_excel_sheets.py` (`TestWritingBack`).
+
 ### DT53 — SQLite com várias tabelas não abre **(reproduzido)**
 [files/sqlite.py:69-88](../src/datatool/files/sqlite.py#L69-L88)
 
@@ -741,6 +751,8 @@ exit=1
 A mensagem repete o prefixo, mostra a lista no formato do Python e sai com exit 1 (falha de leitura), quando o problema é de escolha (exit 2). É a mesma situação que a spec 022 resolveu para as abas do Excel, que a citou como fora de escopo.
 
 **Correção proposta:** uma opção `--table` no mesmo padrão do `--sheet` (nome exato; erro com exit 2 e a lista de tabelas quando não existe), em `convert`, `info`, `profile` e `clean`, e o parâmetro `table` no servidor MCP. Sem `--table` e com várias tabelas, o erro passa a ter exit 2, a lista em texto (`Tabelas: clientes, pedidos.`) e a sugestão de `--table`. O JSON pode trazer `table`/`tables` no resumo do arquivo, como `sheet`/`sheets`.
+
+**Resolução:** `--table` em `convert`, `info`, `profile` e `clean`, e `table` nas cinco ferramentas do MCP. Sem `--table`, continua valendo a tabela com o nome do arquivo ou a única do banco; com várias e nenhuma com esse nome, o erro tem exit code 2, a lista em texto e a sugestão de `--table`. Tabela inexistente é exit code 2 com a lista; banco sem tabelas, exit code 1. O JSON traz `table`/`tables`, e as sugestões do `info` incluem `--table` quando o banco tem mais de uma tabela. Testes em `tests/test_sqlite.py` (`TestTableSelection`).
 
 ### DT54 — Sem `tail` para ver as últimas linhas
 [025-head-sample.md](025-head-sample.md)

@@ -20,6 +20,7 @@ def convert(
     overwrite=False,
     reload_target=False,
     sheet=None,
+    table=None,
 ):
     """Converte o arquivo; levanta `CommandError` em entrada ou saída inválida.
 
@@ -36,13 +37,14 @@ def convert(
         file_type=from_type,
         type_option="--from-type",
         sheet=sheet,
+        table=table,
     )
     if to_filename is None:
         return ConvertResult(loaded, None, None, None)
 
     to_type = output_file_type(to_filename, to_type, type_option="--to-type")
-    check_output(to_filename, overwrite)
-    write_output(loaded.df, to_filename, to_type)
+    check_output(to_filename, overwrite, loaded)
+    write_output(loaded.df, to_filename, to_type, loaded.sheet)
 
     target_shape = None
     if reload_target:

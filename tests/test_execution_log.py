@@ -129,9 +129,11 @@ class TestExecutionLog:
             runner.invoke(app, ["clean", "dados.csv", "--drop-null", "--columns", "x"])
             log = read_log()
             assert "INFO    [" in log
-            assert '--fix-types: "idade" convertida para int' in log
             assert "WARNING [" in log
-            assert '--fix-types: "idade" 1 valores não convertidos' in log
+            assert (
+                '--fix-types: "idade" 1 valores não são números; coluna não convertida'
+                in log
+            )
             assert "gravado saida.parquet (parquet) — 10 linhas, 2 colunas" in log
             assert "ERROR   [" in log
             assert "Coluna(s) inexistente(s) em --drop-null-columns: x" in log

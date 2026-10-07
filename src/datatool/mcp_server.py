@@ -20,7 +20,7 @@ from . import info as info_command
 from . import profiler as profile_command
 from .execution_log import logged, set_exit_code
 from .files import FileType
-from .reporting import CommandError, build_error, error_document
+from .reporting import CommandError, error_document
 
 DEFAULT_MAX_COLUMNS = 50
 
@@ -103,7 +103,9 @@ def _error_result(document):
 
 
 def _sandbox_error_result(command, error):
-    return _error_result(build_error(command, str(error), 2))
+    # Pelo `error_document`, como os erros de comando: a mensagem vai para o
+    # log (só caminhos, nenhum valor de célula).
+    return _error_result(error_document(command, CommandError(str(error), 2)))
 
 
 def _run_tool(command, run, to_document):
@@ -144,6 +146,7 @@ def build_server(root):
             "colunas numéricas guardadas como texto, CPF/CNPJ inválido — e "
             "sugere o comando `clean` que corrige cada problema encontrado."
             " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
+            " Em bancos SQLite com várias tabelas, `table` escolhe a tabela, e `file.tables` lista todas."
         ),
     )
     @logged("mcp info")
@@ -153,6 +156,7 @@ def build_server(root):
         encoding: str | None = None,
         redact_values: bool = True,
         sheet: str | None = None,
+        table: str | None = None,
     ) -> CallToolResult:
         try:
             resolved = _validate_input(root, filename)
@@ -162,7 +166,7 @@ def build_server(root):
         return _run_tool(
             "info",
             lambda: info_command.diagnose(
-                resolved, sep=sep, encoding=encoding, sheet=sheet
+                resolved, sep=sep, encoding=encoding, sheet=sheet, table=table
             ),
             lambda result: info_command.to_document(result, redact_values),
         )
@@ -177,6 +181,7 @@ def build_server(root):
             "duplicidade de linhas (total e por chave). Em datasets largos, "
             "use `columns` ou `max_columns` para limitar a resposta."
             " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
+            " Em bancos SQLite com várias tabelas, `table` escolhe a tabela, e `file.tables` lista todas."
         ),
     )
     @logged("mcp profile")
@@ -189,6 +194,7 @@ def build_server(root):
         encoding: str | None = None,
         redact_values: bool = True,
         sheet: str | None = None,
+        table: str | None = None,
     ) -> CallToolResult:
         try:
             resolved = _validate_input(root, filename)
@@ -205,6 +211,7 @@ def build_server(root):
                 columns=columns,
                 max_columns=max_columns,
                 sheet=sheet,
+                table=table,
             ),
             lambda result: profile_command.to_document(result, redact_values),
         )
@@ -219,6 +226,7 @@ def build_server(root):
             "capitalização e CPF/CNPJ inválido. Para aplicar correções, use "
             "datatool_clean_apply."
             " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
+            " Em bancos SQLite com várias tabelas, `table` escolhe a tabela, e `file.tables` lista todas."
         ),
     )
     @logged("mcp clean_diagnose")
@@ -228,6 +236,7 @@ def build_server(root):
         encoding: str | None = None,
         redact_values: bool = True,
         sheet: str | None = None,
+        table: str | None = None,
     ) -> CallToolResult:
         try:
             resolved = _validate_input(root, filename)
@@ -237,7 +246,7 @@ def build_server(root):
         return _run_tool(
             "clean",
             lambda: clean_command.diagnose(
-                resolved, sep=sep, encoding=encoding, sheet=sheet
+                resolved, sep=sep, encoding=encoding, sheet=sheet, table=table
             ),
             lambda result: clean_command.diagnosis_document(result, redact_values),
         )
@@ -248,14 +257,18 @@ def build_server(root):
         description=(
             "Aplica operações de limpeza a um dataset e grava o resultado em "
             "`output` (obrigatório, precisa ser diferente de `filename`): "
-            "operadores de texto (trim/lowercase/uppercase/normalize_case), "
+            'troca de marcadores de "sem dado" por nulo (`null_values`, ex.: '
+            '"N/D,-"), operadores de texto (trim/lowercase/uppercase/normalize_case), '
             "remoção de duplicidades, preenchimento/remoção de nulos, "
             "normalização de datas, correção de tipos numéricos, "
             "normalização de CPF/CNPJ, e renomear/remover colunas. Pelo "
             "menos uma operação precisa ser pedida — sem nenhuma, use "
             "datatool_clean_diagnose. Recusa sobrescrever um `output` já "
-            "existente sem `overwrite=true`."
+            "existente sem `overwrite=true`. `drop_null_columns` restringe "
+            "`drop_null` a essas colunas; `columns` é o nome antigo desse "
+            "parâmetro, obsoleto, e será removido numa versão futura."
             " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
+            " Em bancos SQLite com várias tabelas, `table` escolhe a tabela, e `file.tables` lista todas."
         ),
     )
     @logged("mcp clean_apply")
@@ -263,6 +276,7 @@ def build_server(root):
         filename: str,
         output: str,
         overwrite: bool = False,
+        null_values: str | None = None,
         trim: bool = False,
         lowercase: bool = False,
         uppercase: bool = False,
@@ -271,6 +285,7 @@ def build_server(root):
         key: str | None = None,
         fill_null: list[str] | None = None,
         drop_null: bool = False,
+        drop_null_columns: str | None = None,
         columns: str | None = None,
         normalize_documents: str | None = None,
         document_columns: str | None = None,
@@ -284,8 +299,15 @@ def build_server(root):
         encoding: str | None = None,
         redact_values: bool = True,
         sheet: str | None = None,
+        table: str | None = None,
     ) -> CallToolResult:
+        if drop_null_columns is not None and columns is not None:
+            return _sandbox_error_result(
+                "clean",
+                "Use só drop_null_columns: columns é o nome antigo do mesmo parâmetro.",
+            )
         options = clean_command.CleanOptions(
+            null_values=null_values,
             trim=trim,
             lowercase=lowercase,
             uppercase=uppercase,
@@ -294,7 +316,9 @@ def build_server(root):
             key=key,
             fill_null=fill_null,
             drop_null=drop_null,
-            drop_null_columns=columns,
+            drop_null_columns=(
+                drop_null_columns if drop_null_columns is not None else columns
+            ),
             normalize_documents=normalize_documents,
             document_columns=document_columns,
             normalize_dates=normalize_dates,
@@ -327,6 +351,7 @@ def build_server(root):
                 sep=sep,
                 encoding=encoding,
                 sheet=sheet,
+                table=table,
             ),
             lambda result: clean_command.result_document(result, redact_values),
         )
@@ -340,6 +365,7 @@ def build_server(root):
             "extensão. `to_filename` precisa ser diferente de `filename`. "
             "Recusa sobrescrever uma saída existente sem `overwrite=true`."
             " Em planilhas Excel, `sheet` escolhe a aba (nome ou posição a partir de 1); sem ela, é lida a primeira aba com dados, e `file.sheets` lista todas."
+            " Em bancos SQLite com várias tabelas, `table` escolhe a tabela, e `file.tables` lista todas."
         ),
     )
     @logged("mcp convert")
@@ -352,6 +378,7 @@ def build_server(root):
         sep: str | None = None,
         encoding: str | None = None,
         sheet: str | None = None,
+        table: str | None = None,
     ) -> CallToolResult:
         try:
             resolved_input = _validate_input(root, filename)
@@ -374,6 +401,7 @@ def build_server(root):
                 encoding=encoding,
                 overwrite=overwrite,
                 sheet=sheet,
+                table=table,
             ),
             convert_command.to_document,
         )

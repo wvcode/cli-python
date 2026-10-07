@@ -2,7 +2,7 @@
 
 Ordem de implementação dos itens abertos do [débito técnico](debito-tecnico.md) (DT37–DT62) e das specs prontas para implementar ([021](021-leitura-via-url.md), [023](023-clean-dry-run.md), [024](024-diff-datasets.md), [025](025-head-sample.md) e o `concat` da [026](026-concat-join.md)). Substitui a antiga seção "Ordem sugerida" do débito técnico. O débito técnico e as specs continuam sendo a fonte de cada item (o problema, o comportamento e os critérios de aceite); aqui fica só a ordem, o que muda em cada passo e como conferir.
 
-Situação em 2026-10-02, depois da publicação da v0.1.2: DT01–DT36 e DT44–DT47 resolvidos e publicados; DT37–DT43 e DT48–DT62 abertos. Specs implementadas: 001–003, 005–011, 017–020 e 022.
+Situação em 2026-10-02, depois da publicação da v0.1.2: DT01–DT36 e DT44–DT47 resolvidos e publicados; DT37–DT43 e DT48–DT62 abertos. Em 2026-10-07, a fase 1 (DT37, DT38, DT48, DT49, DT52 e DT53) foi implementada para a v0.1.3, ainda não publicada. Specs implementadas: 001–003, 005–011, 017–020 e 022.
 
 **Specs prontas:** as que têm "Decisões confirmadas" e nenhuma questão em aberto. Ficam fora deste plano:
 - [004](004-profile-relatorio-html.md) e [012](012-pipeline-automacao.md)–[016](016-licenciamento-pro.md), que ainda têm "Questões em aberto". Entram no plano quando essas questões forem decididas.
@@ -19,6 +19,7 @@ Já feito, na ordem em que foi planejado:
 5. **Segunda revisão:** DT28, DT29, DT30, DT31, DT33, DT34, DT35, DT36 e DT32.
 6. **Publicação da v0.1.0** (PyPI, 2026-09-30): descrições no `--help`, confirmação "Gravado …" no stderr, metadados do PyPI, README e site, CHANGELOG, checagem da versão contra a tag. Os comandos-esqueleto saíram, o que completou o DT06.
 7. **Correções antes de divulgar** (v0.1.2, PyPI, 2026-10-02; não houve 0.1.1): DT46 (UTF-16), DT45 (números além de 64 bits), DT47 (seleção de aba, spec [022](022-excel-selecao-de-aba.md)) e DT44 (`1.500` lido como `1,5`).
+8. **Fase 1 deste plano** (v0.1.3, não publicada): DT52, DT53, DT49 (decidido: não converter colunas mistas), DT37, DT38 e DT48. Junto, `clean --null-values` (extensão da spec [008](008-clean-tratar-nulos.md)), para converter colunas com `N/D` de forma explícita.
 
 ## Decisões pendentes
 
@@ -26,13 +27,14 @@ Itens que não dá para implementar sem uma escolha antes. Vale decidir no come�
 
 | Item | Decisão | Opções (detalhes no débito técnico) |
 |------|---------|-------------------------------------|
-| DT49 | O que o `--fix-types` faz com valores que não convertem | Não converter a coluna e reportá-la como "mista" (mais seguro) · converter e manter como texto · manter a perda atrás de uma flag explícita |
 | DT50 | Interface do CSV para o Excel em português | `--output-sep`/`--output-encoding` · atalho `--excel-br` · herdar separador e encoding da entrada |
 | DT39 | Contagem de testes no site | Remover · gerar no workflow `deploy-pages` |
 | DT59 | Garantia de redação no MCP | Só documentar · opção `datatool-mcp --force-redact` |
 | 021 | URL nos comandos criados antes dela (`head`, `sample`, `diff`, `concat`) | A spec cita só `convert`, `info`, `profile` e `clean`, mas a mudança fica no `load_input`, que os comandos novos também usam: aceitar e testar em todos · recusar nos novos por enquanto |
 
-## Fase 1 — Perda de dado e atritos de uso
+## Fase 1 — Perda de dado e atritos de uso ✅
+
+Implementada em 2026-10-07 para a v0.1.3. A resolução de cada item está no [débito técnico](debito-tecnico.md).
 
 Primeiro o que apaga dado sem aviso, depois o que impede de usar a ferramenta, depois os atritos.
 

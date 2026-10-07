@@ -5,7 +5,7 @@ import os
 
 import polars as pl
 import pytest
-from helpers import isolated_filesystem
+from helpers import isolated_filesystem, load_json
 
 from datatool.main import app
 
@@ -595,15 +595,15 @@ class TestCleanFixTypes:
 
     def test_plain_decimal_point_stays_decimal(self, runner):
         with isolated_filesystem():
-            with open("dados.csv", "w", encoding="utf8") as f:
-                f.write("nota\n1.5\n2.25\nabc\n" + "3\n" * 7)
+            with open("dados.json", "w", encoding="utf8") as f:
+                f.write(json.dumps([{"nota": v} for v in ["1.5", "2.25"] + ["3"] * 7]))
 
             result = runner.invoke(
-                app, ["clean", "dados.csv", "--fix-types", "--output", "saida.parquet"]
+                app, ["clean", "dados.json", "--fix-types", "--output", "saida.parquet"]
             )
             assert result.exit_code == 0
             df = pl.read_parquet("saida.parquet")
-            assert df["nota"].to_list()[:3] == [1.5, 2.25, None]
+            assert df["nota"].to_list()[:3] == [1.5, 2.25, 3.0]
 
     @pytest.mark.parametrize(
         "decimal_separator, values, expected",
@@ -648,33 +648,48 @@ class TestCleanFixTypes:
             assert result.exit_code != 0
             assert "--decimal-separator inválido" in result.stdout
 
-    def test_reports_failed_values_and_keeps_processing(self, runner):
+    def test_mixed_column_is_not_converted_and_nothing_is_lost(self, runner):
+        # DT49: converter apagaria "N/D" e "a combinar"; as colunas ficam como
+        # texto, e as demais continuam sendo convertidas.
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:
                 f.write(
-                    "idade,valor\n"
-                    'N/D,"R$ 1,00"\n'
-                    + "".join(f'{i},"R$ {i},00"\n' for i in range(20, 29))
-                    + "30,a combinar\n"
+                    "idade,valor,preco\n"
+                    'N/D,"R$ 1,00","R$ 1,50"\n'
+                    + "".join(f'{i},"R$ {i},00","R$ {i},50"\n' for i in range(20, 29))
+                    + '30,a combinar,"R$ 2,50"\n'
                 )
 
             result = runner.invoke(
                 app, ["clean", "dados.csv", "--fix-types", "--output", "saida.parquet"]
             )
             assert result.exit_code == 0
-            assert (
-                '"idade": convertida para int, 1 valores não convertidos'
-                in result.stdout
-            )
+            assert '"idade": não convertida, 1 valores não são números' in result.stdout
             assert '"N/D"' in result.stdout
-            assert (
-                '"valor": convertida para float, 1 valores não convertidos'
-                in result.stdout
-            )
+            assert '"valor": não convertida, 1 valores não são números' in result.stdout
             assert '"a combinar"' in result.stdout
             df = pl.read_parquet("saida.parquet")
-            assert df["idade"][0] is None
-            assert df["valor"][-1] is None
+            assert df["idade"].dtype == pl.Utf8
+            assert df["idade"][0] == "N/D"
+            assert df["valor"].dtype == pl.Utf8
+            assert df["valor"][-1] == "a combinar"
+            assert df["preco"].dtype == pl.Float64
+
+    def test_codes_with_letters_keep_every_value(self, runner):
+        # O exemplo do DT49: os códigos com letra continuam no arquivo gravado.
+        with isolated_filesystem():
+            codes = [str(code) for code in range(1000, 1020)] + ["A12", "B7"]
+            with open("dados.json", "w", encoding="utf8") as f:
+                f.write(json.dumps([{"codigo": code} for code in codes]))
+
+            result = runner.invoke(
+                app, ["clean", "dados.json", "--fix-types", "--output", "saida.csv"]
+            )
+            assert result.exit_code == 0
+            assert (
+                pl.read_csv("saida.csv", infer_schema=False)["codigo"].to_list()
+                == codes
+            )
 
     def test_skips_codes_with_leading_zeros(self, runner):
         with isolated_filesystem():
@@ -693,6 +708,104 @@ class TestCleanFixTypes:
             result = runner.invoke(app, ["clean", "dados.csv", "--fix-types"])
             assert result.exit_code == 0
             assert "Nenhuma coluna numérica armazenada como texto" in result.stderr
+
+
+class TestCleanNullValues:
+    def test_markers_become_null_and_fix_types_converts(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "idade\n" + "".join(f"{i}\n" for i in range(20, 28)) + "N/D\n-\n"
+                )
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--null-values",
+                    "N/D,-",
+                    "--fix-types",
+                    "--output",
+                    "saida.parquet",
+                ],
+            )
+
+            assert result.exit_code == 0, result.stdout
+            assert "2 células trocadas por nulo" in result.stdout
+            assert '"idade": convertida para int' in result.stdout
+            df = pl.read_parquet("saida.parquet")
+            assert df["idade"].dtype == pl.Int64
+            assert df["idade"].to_list()[-3:] == [27, None, None]
+
+    def test_compares_without_spaces_and_case_sensitive(self, runner):
+        with isolated_filesystem():
+            with open("dados.json", "w", encoding="utf8") as f:
+                f.write(
+                    json.dumps(
+                        [{"a": " N/D "}, {"a": "n/d"}, {"a": "N/Dx"}, {"a": "ok"}]
+                    )
+                )
+
+            result = runner.invoke(
+                app,
+                ["clean", "dados.json", "--null-values", "N/D", "--output", "s.csv"],
+            )
+
+            assert result.exit_code == 0, result.stdout
+            assert "1 células trocadas por nulo" in result.stdout
+            assert pl.read_csv("s.csv")["a"].to_list() == [None, "n/d", "N/Dx", "ok"]
+
+    def test_runs_before_the_case_operators(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a\nN/D\nAna\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--null-values", "N/D", "--lowercase"]
+            )
+
+            assert result.exit_code == 0, result.stdout
+            assert result.stdout == "a\n\nana\n"
+
+    def test_numeric_columns_are_untouched(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("n,t\n0,0\n1,x\n")
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "dados.csv",
+                    "--null-values",
+                    "0",
+                    "--format",
+                    "json",
+                    "--output",
+                    "s.csv",
+                ],
+            )
+
+            assert result.exit_code == 0, result.stdout
+            assert load_json(result.stdout)["operations"] == [
+                {"operation": "null_values", "cells_replaced": 1}
+            ]
+            assert pl.read_csv("s.csv")["n"].to_list() == [0, 1]
+
+    def test_fix_types_suggests_it_for_mixed_columns(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("idade\n" + "".join(f"{i}\n" for i in range(20, 29)) + "N/D\n")
+
+            result = runner.invoke(
+                app, ["clean", "dados.csv", "--fix-types", "--output", "s.csv"]
+            )
+
+            assert result.exit_code == 0, result.stdout
+            assert "--null-values os troca por nulo antes da conversão" in (
+                result.stdout
+            )
 
 
 class TestCleanColumns:

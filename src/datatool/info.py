@@ -41,9 +41,9 @@ def _format_size(num_bytes):
         size /= 1024
 
 
-def diagnose(filename, sep=None, encoding=None, sheet=None):
+def diagnose(filename, sep=None, encoding=None, sheet=None, table=None):
     """Diagnostica o arquivo; levanta `CommandError` se não conseguir lê-lo."""
-    loaded = load_input(filename, sep, encoding, sheet=sheet)
+    loaded = load_input(filename, sep, encoding, sheet=sheet, table=table)
 
     findings = analyze(loaded.df, loaded.decimal_separator)
     log.info(
@@ -61,12 +61,14 @@ def diagnose(filename, sep=None, encoding=None, sheet=None):
 
 
 def _suggested_command(loaded, flag):
-    """O comando `clean` sugerido, pronto para copiar: com a aba lida quando a
-    planilha tem mais de uma (senão corrigiria outra aba), e com aspas onde o
-    shell precisa."""
+    """O comando `clean` sugerido, pronto para copiar: com a aba ou a tabela
+    lida quando o arquivo tem mais de uma (senão corrigiria outra), e com
+    aspas onde o shell precisa."""
     parts = ["datatool", "clean", shlex.quote(loaded.filename)]
     if loaded.sheet is not None and len(loaded.sheet.sheets) > 1:
         parts += ["--sheet", shlex.quote(loaded.sheet.name)]
+    if len(loaded.summary.get("tables", ())) > 1:
+        parts += ["--table", shlex.quote(loaded.summary["table"])]
     return " ".join([*parts, flag])
 
 
@@ -107,8 +109,10 @@ def print_text(result, redact_values=False):
     print("Problemas encontrados:")
     for finding in result.findings:
         print(f"  ⚠ {display_message(finding, redact_values)}")
-    print()
 
+    if not result.suggestions:
+        return
+    print()
     print("Sugestões:")
     for index, (_, label, flag) in enumerate(result.suggestions, start=1):
         print(f"  {index}. {label} → {_suggested_command(result.input, flag)}")

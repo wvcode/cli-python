@@ -72,14 +72,29 @@ class TestInfoCommand:
 
     def test_info_detects_numeric_stored_as_text(self, runner):
         with isolated_filesystem():
+            rows = "\n".join(f'nome{i},"R$ {i},00"' for i in range(9))
+            with open("clientes.csv", "w", encoding="utf8") as f:
+                f.write(f"nome,valor\n{rows}\n")
+
+            result = runner.invoke(app, ["info", "clientes.csv"])
+            assert result.exit_code == 0
+            assert '"valor" está armazenada como texto' in result.stdout
+            assert "datatool clean clientes.csv --fix-types" in result.stdout
+
+    def test_mixed_column_is_reported_without_suggesting_fix_types(self, runner):
+        # DT49: o --fix-types não converte a coluna, então não é sugerido.
+        with isolated_filesystem():
             rows = "\n".join(f"nome{i},{i}" for i in range(9))
             with open("clientes.csv", "w", encoding="utf8") as f:
                 f.write(f"nome,idade\n{rows}\nUltimo,N/D\n")
 
             result = runner.invoke(app, ["info", "clientes.csv"])
             assert result.exit_code == 0
-            assert '"idade" está armazenada como texto' in result.stdout
-            assert "datatool clean clientes.csv --fix-types" in result.stdout
+            assert '"idade" parece numérica, mas 1 valores não são números' in (
+                result.stdout
+            )
+            assert "--fix-types" not in result.stdout
+            assert "Sugestões" not in result.stdout
 
     def test_info_works_for_excel_and_parquet(self, runner):
         with isolated_filesystem():

@@ -2,6 +2,33 @@
 
 As mudanças de cada versão do `datatool-cli`. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e as versões seguem o [versionamento semântico](https://semver.org/lang/pt-BR/).
 
+## [0.1.3] — não publicada
+
+### Corrigido
+
+- `--fix-types` apagava os valores que não conseguia converter: numa coluna de códigos (`1000`, `1001`, `A12`, `B7`), `A12` e `B7` viravam nulos no arquivo gravado, e o `info` sugeria a operação. Agora uma coluna com algum valor que não é número não é convertida: continua como texto, sem perder nada, e o relatório lista os valores (veja "Alterado").
+- Gravar sobre a própria planilha de entrada (`clean relatorio.xlsx --sheet "Vendas 2025" --output relatorio.xlsx --overwrite`, ou o mesmo no `convert`) apagava as outras abas, com exit code 0. Agora, se a planilha tem mais de uma aba, a gravação é recusada antes de processar (exit code 2), mesmo com `--overwrite`. Ao gravar em outro `.xlsx`, a aba mantém o nome da aba lida, em vez de "Sheet1".
+- Um banco SQLite com várias tabelas e nenhuma com o nome do arquivo não abria em nenhum comando. Agora o erro lista as tabelas e sugere `--table` (exit code 2, em vez de 1).
+- Colunas com espaços nas pontas do nome (`" email "`, comum em exportações do Excel) não podiam ser referenciadas em `--key`, `--columns`, `--rename-columns` e nas demais opções de coluna. Agora são encontradas pelo nome sem os espaços; se duas colunas casarem, é erro (exit code 2).
+
+### Adicionado
+
+- `--table` em `convert`, `info`, `profile` e `clean` (e `table` nas ferramentas do servidor MCP) escolhe a tabela de um banco SQLite. O JSON traz `table` e `tables` no resumo do arquivo, e as sugestões do `info` incluem a tabela.
+- O diagnóstico do `clean` aponta nomes de coluna com espaços nas pontas (categoria `column_name_whitespace`, com o novo `count_unit` `columns`) e mostra o `--rename-columns` que os tira.
+- `drop_null_columns` no `datatool_clean_apply` do servidor MCP, com o mesmo nome da opção do CLI.
+- `--null-values` no `clean` (e `null_values` no `datatool_clean_apply`) troca por nulo, nas colunas de texto, valores que querem dizer "sem dado": `datatool clean dados.csv --null-values "N/D,-" --fix-types` converte uma coluna de números com `N/D`, o que o `--fix-types` sozinho deixou de fazer. Quando uma coluna não é convertida, o relatório do `--fix-types` sugere a opção.
+
+### Alterado
+
+- `--fix-types` não converte mais colunas em que algum valor não é número (antes, esses valores viravam nulo). No texto, a coluna aparece como `"idade": não convertida, 1 valores não são números (a coluna continua como texto):`, seguida dos valores. No JSON, cada coluna da operação `fix_types` ganha `converted` (`true`/`false`), e `type` é `null` nas não convertidas. Uma coluna com `N/D` no lugar de números agora fica como texto; para convertê-la, use `--null-values "N/D" --fix-types`.
+- O `info` aponta essas colunas como `mixed_types` (`"idade" parece numérica, mas 1 valores não são números`), sem sugerir `--fix-types`. A categoria `types`, que dispara a sugestão, fica só para colunas em que todos os valores são números.
+- Sem nenhuma sugestão, o `info` não imprime mais o título "Sugestões:" vazio.
+- No servidor MCP, os erros de sandbox (caminho fora da raiz, destino igual à entrada, destino existente sem `overwrite=true`) passam a ser registrados no log, como os demais erros.
+
+### Obsoleto
+
+- O parâmetro `columns` do `datatool_clean_apply` (servidor MCP) continua aceito, mas será removido numa versão futura: use `drop_null_columns`. Passar os dois é erro.
+
 ## [0.1.2] — 2026-10-02
 
 A versão seguinte à 0.1.0: não houve 0.1.1 publicada.

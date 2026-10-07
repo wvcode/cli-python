@@ -1,12 +1,16 @@
-"""SQLite: tipos na ida e volta e colunas com tipos mistos (DT31)."""
+"""SQLite: tipos na ida e volta, colunas com tipos mistos (DT31) e escolha da
+tabela (DT53)."""
 
+import asyncio
 import datetime as dt
+import shlex
 import sqlite3
 
 import polars as pl
 import pytest
-from helpers import isolated_filesystem
+from helpers import isolated_filesystem, load_json
 
+from datatool import mcp_server
 from datatool.main import app
 
 
@@ -159,7 +163,7 @@ class TestMixedTypes:
             result = runner.invoke(app, ["info", "dados.db"])
 
             assert result.exit_code == 0, result.stdout
-            assert '"idade" está armazenada como texto mas parece numérica' in (
+            assert '"idade" parece numérica, mas 1 valores não são números' in (
                 result.stdout
             )
 
@@ -181,3 +185,139 @@ class TestMixedTypes:
 
             back = pl.read_parquet("volta.parquet")["v"]
             assert back.to_list() == [1.0, 2.5, None]
+
+
+def _base_with_two_tables():
+    _create_table("base.db", "clientes", "nome TEXT", [("Ana",), ("Bia",)])
+    _create_table(
+        "base.db", "pedidos", "id INTEGER, valor TEXT", [(1, "R$ 1,00"), (2, "R$ 2,00")]
+    )
+
+
+class TestTableSelection:
+    """Bancos com várias tabelas (DT53)."""
+
+    def test_several_tables_without_option_is_a_choice_error(self, runner):
+        with isolated_filesystem():
+            _base_with_two_tables()
+
+            result = runner.invoke(app, ["info", "base.db"])
+
+            assert result.exit_code == 2
+            assert result.stdout == (
+                "Não foi possível decidir qual tabela ler de base.db. "
+                "Tabelas: clientes, pedidos. Use --table para escolher uma.\n"
+            )
+
+    @pytest.mark.parametrize(
+        ("command", "expected"),
+        [
+            (["info", "base.db"], "Colunas: 2"),
+            (["profile", "base.db"], "valor"),
+            (["clean", "base.db"], "Colunas: 2"),
+            (["clean", "base.db", "--trim"], "id,valor"),
+        ],
+    )
+    def test_table_option_picks_the_table(self, runner, command, expected):
+        with isolated_filesystem():
+            _base_with_two_tables()
+
+            result = runner.invoke(app, [*command, "--table", "pedidos"])
+
+            assert result.exit_code == 0, result.stdout
+            assert expected in result.stdout
+
+    def test_convert_reads_the_chosen_table(self, runner):
+        with isolated_filesystem():
+            _base_with_two_tables()
+
+            result = runner.invoke(
+                app, ["convert", "base.db", "clientes.csv", "--table", "clientes"]
+            )
+
+            assert result.exit_code == 0, result.stdout
+            with open("clientes.csv", encoding="utf8") as f:
+                assert f.read() == "nome\nAna\nBia\n"
+
+    def test_unknown_table_lists_the_tables(self, runner):
+        with isolated_filesystem():
+            _base_with_two_tables()
+
+            result = runner.invoke(app, ["info", "base.db", "--table", "x"])
+
+            assert result.exit_code == 2
+            assert result.stdout == (
+                'A tabela "x" não existe em base.db. Tabelas: clientes, pedidos.\n'
+            )
+
+    def test_table_option_only_for_sqlite(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a\n1\n")
+
+            result = runner.invoke(app, ["info", "dados.csv", "--table", "x"])
+
+            assert result.exit_code == 2
+            assert "--table só vale para arquivos SQLite" in result.stdout
+
+    def test_json_has_table_and_tables(self, runner):
+        with isolated_filesystem():
+            _base_with_two_tables()
+
+            result = runner.invoke(
+                app, ["info", "base.db", "--table", "pedidos", "--format", "json"]
+            )
+
+            document = load_json(result.stdout)
+            assert document["file"]["table"] == "pedidos"
+            assert document["file"]["tables"] == ["clientes", "pedidos"]
+
+    def test_suggestions_include_the_table_and_work_when_copied(self, runner):
+        with isolated_filesystem():
+            _base_with_two_tables()
+
+            result = runner.invoke(
+                app, ["info", "base.db", "--table", "pedidos", "--format", "json"]
+            )
+
+            [command] = [s["command"] for s in load_json(result.stdout)["suggestions"]]
+            assert command == "datatool clean base.db --table pedidos --fix-types"
+            result = runner.invoke(
+                app, [*shlex.split(command)[1:], "--output", "pedidos.csv"]
+            )
+            assert result.exit_code == 0, result.stdout
+
+    def test_table_named_after_the_file_is_still_the_default(self, runner):
+        with isolated_filesystem():
+            _create_table("base.db", "outra", "x TEXT", [("a",)])
+            _create_table("base.db", "base", "y TEXT", [("b",)])
+
+            result = runner.invoke(app, ["convert", "base.db"])
+
+            assert result.exit_code == 0, result.stdout
+            assert result.stdout == "y\nb\n"
+
+    def test_database_without_tables(self, runner):
+        with isolated_filesystem():
+            sqlite3.connect("vazio.db").close()
+            with open("vazio.db", "wb"):
+                pass
+
+            result = runner.invoke(app, ["info", "vazio.db"])
+
+            assert result.exit_code == 1
+            assert result.stdout == "vazio.db não tem nenhuma tabela.\n"
+
+    def test_mcp_tool_accepts_table(self):
+        with isolated_filesystem():
+            _base_with_two_tables()
+            server = mcp_server.build_server(".")
+
+            result = asyncio.run(
+                server.call_tool(
+                    "datatool_info", {"filename": "base.db", "table": "pedidos"}
+                )
+            )
+
+            assert result.is_error is False, result.content[0].text
+            assert result.structured_content["file"]["table"] == "pedidos"

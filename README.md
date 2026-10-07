@@ -44,9 +44,9 @@ datatool convert vendas.xlsx vendas.csv
 ```
 
 - Formatos suportados: **CSV, JSON, JSONL, Excel (xlsx), Parquet, SQLite**, além de Feather e Avro.
-- SQLite: a tabela tem o nome do arquivo (`vendas.db` → tabela `vendas`). Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas. Booleanos, datas e data-hora são gravados com o tipo declarado (`BOOLEAN`, `DATE`, `TIMESTAMP`) e voltam com o mesmo tipo na leitura. Data-hora com fuso volta em UTC, no mesmo instante.
+- SQLite: na leitura, `--table` escolhe a tabela. Sem ele, é lida a tabela com o nome do arquivo (`vendas.db` → tabela `vendas`) ou, se o banco tem uma só, essa; com várias tabelas e nenhuma com esse nome, o comando lista as tabelas e pede `--table` (exit code 2). O JSON traz `table` e `tables` no resumo do arquivo. Na gravação, a tabela tem o nome do arquivo. Com `--overwrite` num `.db` que já existe, a tabela é substituída numa única transação: se a gravação falhar, a tabela original fica intacta. As demais tabelas do arquivo não são tocadas. Booleanos, datas e data-hora são gravados com o tipo declarado (`BOOLEAN`, `DATE`, `TIMESTAMP`) e voltam com o mesmo tipo na leitura. Data-hora com fuso volta em UTC, no mesmo instante.
 - Colunas só de inteiros com valores que não cabem em 64 bits, como a chave de acesso da NF-e (44 dígitos) ou o código de barras de um boleto, são lidas como texto: são identificadores, e como texto não perdem nenhum dígito.
-- Os tipos das colunas são inferidos com o arquivo inteiro, não só com as primeiras linhas: um valor como `N/D` numa coluna numérica, em qualquer posição, faz a coluna ser lida como texto (o `info` aponta e o `clean --fix-types` corrige), em vez de impedir a leitura ou virar nulo.
+- Os tipos das colunas são inferidos com o arquivo inteiro, não só com as primeiras linhas: um valor como `N/D` numa coluna numérica, em qualquer posição, faz a coluna ser lida como texto, sem perder nenhum valor, em vez de impedir a leitura ou virar nulo. O `info` aponta a coluna.
 - O formato de entrada e saída é inferido pela extensão do arquivo. Use `--from-type`/`--to-type` para sobrescrever quando a extensão não é reconhecida ou é ambígua.
 - Com `to_filename`, uma linha de confirmação vai para o stderr: `Gravado vendas.parquet (parquet): 1.500 linhas, 8 colunas`.
 - Se `to_filename` for omitido, o dataset inteiro é impresso no stdout em CSV, pronto para pipe (`datatool convert vendas.xlsx | head`).
@@ -72,8 +72,9 @@ Mostra linhas, colunas e tamanho do arquivo, além de detectar automaticamente:
 - linhas duplicadas
 - colunas com múltiplos formatos de data
 - colunas numéricas armazenadas como texto
+- colunas quase numéricas com alguns valores que não são números (`N/D`, `a combinar`), sem sugestão: o `--fix-types` não as converte, para não apagar esses valores. Se eles querem dizer "sem dado", `clean --null-values "N/D" --fix-types` os troca por nulo e converte a coluna
 
-Para cada problema encontrado, sugere o comando `datatool clean` correspondente. Todas as sugestões (`--fix-types`, `--remove-duplicates`, `--normalize-dates`, `--drop-null`) já estão implementadas. Funciona para CSV, JSON, Excel e Parquet.
+Para cada problema que tem correção, sugere o comando `datatool clean` correspondente. Todas as sugestões (`--fix-types`, `--remove-duplicates`, `--normalize-dates`, `--drop-null`) já estão implementadas. Funciona para CSV, JSON, Excel e Parquet.
 
 ```text
 Arquivo: clientes.csv
@@ -84,14 +85,14 @@ Tamanho: 711 bytes
 Problemas encontrados:
   ⚠ 3 valores nulos em "email"
   ⚠ 1 linhas duplicadas
-  ⚠ "data_nascimento" contém 5 formatos de data diferentes
-  ⚠ "idade" está armazenada como texto mas parece numérica
+  ⚠ "data_nascimento" contém 4 formatos de data diferentes
+  ⚠ 10 CPFs com dígito verificador inválido
+  ⚠ "idade" parece numérica, mas 1 valores não são números
 
 Sugestões:
-  1. Corrigir tipos → datatool clean clientes.csv --fix-types
-  2. Remover duplicidades → datatool clean clientes.csv --remove-duplicates
-  3. Normalizar datas → datatool clean clientes.csv --normalize-dates
-  4. Tratar valores nulos → datatool clean clientes.csv --drop-null
+  1. Remover duplicidades → datatool clean clientes.csv --remove-duplicates
+  2. Normalizar datas → datatool clean clientes.csv --normalize-dates
+  3. Tratar valores nulos → datatool clean clientes.csv --drop-null
 ```
 
 Um arquivo de exemplo que dispara todos esses problemas está em [examples/clientes.csv](https://github.com/wvcode/cli-python/blob/main/examples/clientes.csv).
@@ -156,6 +157,7 @@ Sem nenhuma flag, é somente leitura/diagnóstico — **não grava nenhum arquiv
 - espaços extras nas bordas dos valores
 - duplicidade por chave (coluna majoritariamente única com alguns valores repetidos, ex.: CPF)
 - inconsistência de capitalização (ex.: "Porto Alegre" / "PORTO ALEGRE" / "porto alegre")
+- nome de coluna com espaços nas pontas (ex.: `" email "`, comum em exportações do Excel), com o `--rename-columns` que os tira
 
 ```text
 Arquivo: clientes_sujos.csv
@@ -218,6 +220,7 @@ datatool clean clientes.csv --remove-duplicates --key cpf --output clientes_limp
 `--fill-null`/`--drop-null` tratam valores nulos e reportam quantas células/linhas foram afetadas:
 
 ```bash
+datatool clean clientes.csv --null-values "N/D,-"
 datatool clean clientes.csv --fill-null "N/A"
 datatool clean clientes.csv --fill-null "idade:0" --output clientes_limpo.csv
 datatool clean clientes.csv --drop-null
@@ -226,6 +229,7 @@ datatool clean clientes.csv --drop-null --drop-null-columns email --output clien
 
 - `--fill-null valor` (sem `:`) preenche nulos só nas colunas de texto — evita converter uma coluna numérica inteira para texto ao preencher com um valor não numérico
 - `--fill-null coluna:valor` preenche só essa coluna, convertendo o valor para o tipo da coluna quando ela é numérica; um valor incompatível com o tipo (ex.: `idade:abc`) é erro, exit code 2, em vez de transformar a coluna em texto; é repetível (`--fill-null "N/A" --fill-null "idade:0"`)
+- `--null-values "N/D,-"` troca por nulo, nas colunas de texto, os valores que querem dizer "sem dado". A comparação ignora os espaços nas pontas e diferencia maiúsculas de minúsculas. Roda antes das demais operações, então `--null-values "N/D" --fix-types` converte uma coluna de números com `N/D`, e `--fill-null`/`--drop-null` tratam os nulos que ela criou
 - `--drop-null` remove linhas com nulos em qualquer coluna por padrão, ou só nas colunas de `--drop-null-columns coluna1,coluna2` (`--columns` continua aceito como nome antigo)
 
 `--normalize-dates` converte datas em formatos variados para ISO 8601 (`yyyy-mm-dd`):
@@ -260,13 +264,15 @@ datatool clean relatorio.csv --fix-types --decimal-separator , --output relatori
 - Sem `--decimal-separator`, num CSV separado por `;` (o do Excel em português) a vírgula é o decimal e o ponto, o milhar: `1.500` → `1500`. Nos demais arquivos, decide por coluna: se algum valor tem vírgula ou `R$`, usa `,` como decimal; senão, `.`, e uma coluna só com valores como `1.500` é lida como `1.5` (informe `--decimal-separator ,` para ler como `1500`)
 - A coluna vira `int` quando nenhum valor tem parte decimal, senão `float`
 - Colunas com zeros à esquerda (`01001000`, típico de CEP/CPF) são ignoradas, porque a conversão perderia os zeros
-- Valores que não puderam ser convertidos viram nulo e são listados na saída, sem interromper as demais colunas:
+- Uma coluna com algum valor que não é número (`N/D`, `a combinar`, um código como `A12`) **não é convertida**: continua como texto, sem perder nenhum valor, e os valores aparecem na saída. As demais colunas são convertidas normalmente:
 
 ```text
-"valor": convertida para float, 1 valores não convertidos (viraram nulo):
+"valor": não convertida, 1 valores não são números (a coluna continua como texto):
   "a combinar"
-"idade": convertida para int, 1 valores não convertidos (viraram nulo):
+"idade": não convertida, 1 valores não são números (a coluna continua como texto):
   "N/D"
+"preco": convertida para float
+Se esses valores querem dizer "sem dado", --null-values os troca por nulo antes da conversão (ex.: --null-values "N/D,-" --fix-types).
 ```
 
 `--rename-columns`/`--remove-columns` ajustam o schema:
@@ -277,6 +283,7 @@ datatool clean vendas.csv --remove-columns coluna_interna,coluna_temp --output v
 ```
 
 - Coluna inexistente, entrada sem `:` em `--rename-columns` ou renomeação que geraria nomes repetidos são erro claro, sem gravar nada
+- Nomes de coluna com espaços nas pontas (`" email "`) podem ser referenciados sem os espaços, aqui e em `--key`, `--columns`, `--drop-null-columns`, `--date-columns`, `--document-columns` e `--fill-null coluna:valor`; `--rename-columns email:email` tira os espaços. Se duas colunas tiverem o mesmo nome sem os espaços (`"email"` e `" email "`), é erro (exit code 2)
 - São aplicadas **antes** das demais operações (primeiro remove, depois renomeia): `--key`, `--drop-null-columns`, `--date-columns` e `--fill-null coluna:valor` usam os nomes já renomeados, e colunas removidas não entram na deduplicação
 
 `--normalize-documents` valida e padroniza CPF/CNPJ, inclusive o CNPJ alfanumérico (letras nas 12 primeiras posições, emitido pela Receita desde julho de 2026):
@@ -327,7 +334,7 @@ datatool convert relatorio.xlsx clientes.csv --sheet 3
 - O texto mostra `Aba: Vendas 2025 (2 de 3)` logo depois de "Arquivo:", e o JSON traz `sheet` e `sheets` no resumo do arquivo
 - As sugestões do `info` incluem a aba, para o comando sugerido corrigir a aba certa (`datatool clean relatorio.xlsx --sheet 'Vendas 2025' --fix-types`)
 - Aba inexistente é erro (exit code 2) com a lista de abas; aba vazia pedida com `--sheet`, ou planilha sem nenhuma aba com dados, é erro com exit code 1
-- Ao gravar em `.xlsx`, o resultado tem uma aba só: gravar com `--overwrite` sobre a própria planilha de entrada descarta as outras abas dela (débito técnico DT52; até a correção, grave em outro arquivo)
+- Ao gravar em `.xlsx`, o resultado tem uma aba só, com o nome da aba lida. Por isso, gravar sobre a própria planilha de entrada quando ela tem mais de uma aba é recusado (exit code 2), mesmo com `--overwrite`, já que apagaria as outras abas: grave em outro arquivo
 
 ### Log de execução
 
@@ -373,8 +380,8 @@ datatool clean clientes.csv --fix-types --remove-duplicates --output limpo.parqu
 }
 ```
 
-- Em planilhas Excel, o resumo do arquivo (`file`, ou `source` no `convert`) traz `sheet` (a aba lida) e `sheets` (todas as abas, com `"hidden": true` nas ocultas)
-- Cada problema traz `count` e `count_unit` (`rows`, `values`, `formats` ou `variants`), que diz o que está sendo contado
+- Em planilhas Excel, o resumo do arquivo (`file`, ou `source` no `convert`) traz `sheet` (a aba lida) e `sheets` (todas as abas, com `"hidden": true` nas ocultas); em bancos SQLite, `table` (a tabela lida) e `tables` (todas)
+- Cada problema traz `count` e `count_unit` (`rows`, `values`, `formats`, `variants` ou `columns`), que diz o que está sendo contado
 - Todo documento traz `schema_version`, `command` e `status`; `info` traz `problems`/`suggestions`, `profile` traz `duplicates`/`columns`, o `clean` traz `problems` (diagnóstico) ou `operations`/`output` (com operações), e o `convert` traz `source`/`target`
 - Números sem formatação pt-BR nem arredondamento; `NaN` vira `null`
 - Erros também saem em JSON (`"status": "error"`), com o mesmo exit code do modo texto
@@ -413,7 +420,8 @@ Expõe `info`, `profile`, `clean` (diagnóstico e operação) e `convert` como f
 - Ferramentas: `datatool_info`, `datatool_profile` (+ `columns`/`max_columns`, padrão 50), `datatool_clean_diagnose`, `datatool_clean_apply` (grava em `output`) e `datatool_convert` (grava em `to_filename`) — cada uma devolve o mesmo JSON de [`--format json`](#saída-em-json---format-json)
 - Todo caminho de arquivo fica restrito ao diretório passado em `--root`; `output`/`to_filename` nunca pode ser o mesmo arquivo da entrada, e uma saída já existente exige `overwrite: true`
 - `redact_values` vem **ligado por padrão** nas ferramentas (diferente do CLI, onde vem desligado): os valores de célula não trafegam para o modelo de IA a menos que a pessoa configure a ferramenta com `redact_values: false`
-- Em planilhas Excel, todas as ferramentas aceitam `sheet` (nome ou posição), e o JSON devolvido lista as abas em `file.sheets` (`source.sheets` no `convert`), para o agente escolher a aba certa
+- Em planilhas Excel, todas as ferramentas aceitam `sheet` (nome ou posição), e o JSON devolvido lista as abas em `file.sheets` (`source.sheets` no `convert`), para o agente escolher a aba certa; em bancos SQLite, `table`, com a lista em `file.tables`
+- No `datatool_clean_apply`, `drop_null_columns` restringe o `drop_null` a essas colunas; `columns`, o nome antigo, ainda é aceito, mas será removido numa versão futura
 - Cada chamada é registrada em `<root>/logs/datatool.log` (ou onde `DATATOOL_LOG_DIR` apontar), com o nome prefixado (`mcp info`, `mcp clean`, ...)
 - Só ferramentas Community por enquanto — o detalhamento completo está em [specs/020-mcp-server.md](https://github.com/wvcode/cli-python/blob/main/specs/020-mcp-server.md)
 

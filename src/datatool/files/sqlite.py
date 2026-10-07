@@ -66,25 +66,48 @@ def _restore_declared_type(series, declared_type):
         return series
 
 
-def read_sqlite(filename):
-    table_name = _table_name(filename)
+def _list_tables(conn):
+    cursor = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' "
+        "AND name NOT LIKE 'sqlite_%' ORDER BY rowid"
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def list_tables(filename):
+    """As tabelas do banco, na ordem em que foram criadas."""
     conn = sqlite3.connect(filename)
     try:
+        return _list_tables(conn)
+    finally:
+        conn.close()
+
+
+def default_table(filename, tables):
+    """A tabela lida sem --table: a que tem o nome do arquivo (`vendas.db` →
+    `vendas`) ou, se o banco tem uma só, essa. None se não der para decidir."""
+    table_name = _table_name(filename)
+    if table_name in tables:
+        return table_name
+    if len(tables) == 1:
+        return tables[0]
+    return None
+
+
+def read_sqlite(filename, table=None):
+    """Lê a tabela `table` ou, sem ela, a de `default_table`."""
+    conn = sqlite3.connect(filename)
+    try:
+        selected_table = table
+        if selected_table is None:
+            tables = _list_tables(conn)
+            selected_table = default_table(filename, tables)
+            if selected_table is None:
+                raise ValueError(
+                    f"Não foi possível decidir qual tabela ler de {filename}. "
+                    f"Tabelas: {', '.join(tables)}."
+                )
         cursor = conn.cursor()
-        cursor.execute(
-            "SELECT name FROM sqlite_master WHERE type = 'table' "
-            "AND name NOT LIKE 'sqlite_%'"
-        )
-        tables = [row[0] for row in cursor.fetchall()]
-        if table_name in tables:
-            selected_table = table_name
-        elif len(tables) == 1:
-            selected_table = tables[0]
-        else:
-            raise ValueError(
-                f"Não foi possível decidir qual tabela ler de {filename}: "
-                f"tabelas encontradas: {tables}."
-            )
 
         cursor.execute(f"PRAGMA table_info({_quote(selected_table)})")
         declared_types = {row[1]: row[2] for row in cursor.fetchall()}

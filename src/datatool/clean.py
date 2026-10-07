@@ -19,6 +19,7 @@ from .inference import (
 from .loading import (
     check_output,
     csv_text,
+    find_column,
     load_input,
     output_file_type,
     parse_column_list,
@@ -50,6 +51,7 @@ class CleanOptions:
     """Operações pedidas ao `clean`. Cada campo com o nome de uma operação de
     `_OPERATIONS` a liga; os demais são parâmetros dessas operações."""
 
+    null_values: str | None = None
     trim: bool = False
     lowercase: bool = False
     uppercase: bool = False
@@ -115,8 +117,28 @@ def _string_operator(method):
     return apply
 
 
+def _apply_null_values(df, options):
+    # Comparados sem os espaços nas pontas, para " N/D " contar sem --trim.
+    values = parse_column_list(options.null_values)
+    total_replaced = 0
+    for column in df.columns:
+        if df[column].dtype != pl.Utf8:
+            continue
+        is_null_value = df[column].str.strip_chars().is_in(values)
+        replaced = is_null_value.sum()
+        if replaced:
+            df = df.with_columns(
+                pl.when(is_null_value)
+                .then(None)
+                .otherwise(pl.col(column))
+                .alias(column)
+            )
+            total_replaced += replaced
+    return df, {"cells_replaced": total_replaced}
+
+
 def _apply_remove_duplicates(df, options):
-    key_columns = parse_column_list(options.key) if options.key else None
+    key_columns = resolve_columns(df, options.key, "--key") if options.key else None
     before = df.height
     df = df.unique(subset=key_columns, keep="first", maintain_order=True)
     return df, {"rows_removed": before - df.height}
@@ -253,24 +275,35 @@ def _apply_fix_types(df, options):
             else:
                 mapping[value] = parsed
 
+        if failed:
+            # Converter apagaria esses valores (DT49): a coluna fica como texto,
+            # e o relatório a aponta como mista.
+            column_reports.append(
+                {
+                    "column": column,
+                    "converted": False,
+                    "type": None,
+                    "failed_count": df[column].is_in(failed).sum(),
+                    "failed_distinct": len(failed),
+                    "failed_examples": sorted(failed)[:_UNRECOGNIZED_LIMIT],
+                }
+            )
+            continue
+
         is_float = any(isinstance(parsed, float) for parsed in mapping.values())
         if is_float:
             mapping = {value: float(parsed) for value, parsed in mapping.items()}
         dtype = pl.Float64 if is_float else pl.Int64
-        type_name = "float" if is_float else "int"
 
-        failed_count = df[column].is_in(failed).sum()
-        df = df.with_columns(
-            pl.col(column).replace_strict(mapping, default=None, return_dtype=dtype)
-        )
-
+        df = df.with_columns(pl.col(column).replace_strict(mapping, return_dtype=dtype))
         column_reports.append(
             {
                 "column": column,
-                "type": type_name,
-                "failed_count": failed_count,
-                "failed_distinct": len(failed),
-                "failed_examples": sorted(failed)[:_UNRECOGNIZED_LIMIT],
+                "converted": True,
+                "type": "float" if is_float else "int",
+                "failed_count": 0,
+                "failed_distinct": 0,
+                "failed_examples": [],
             }
         )
 
@@ -296,9 +329,11 @@ def _apply_fill_null(df, options):
     for spec in options.fill_null:
         column_name, separator, value = spec.partition(":")
         if separator:
-            if column_name not in df.columns:
+            requested_name = column_name.strip()
+            column_name = find_column(df, requested_name)
+            if column_name is None:
                 raise CommandError(
-                    f"Coluna inexistente em --fill-null: {column_name}", 2
+                    f"Coluna inexistente em --fill-null: {requested_name}", 2
                 )
             null_count = df[column_name].null_count()
             if null_count:
@@ -346,6 +381,7 @@ def _apply_remove_columns(df, options):
 
 def _apply_rename_columns(df, options):
     mapping = {}
+    unknown_columns = []
     for entry in parse_column_list(options.rename_columns):
         old_name, separator, new_name = entry.partition(":")
         old_name, new_name = old_name.strip(), new_name.strip()
@@ -353,9 +389,12 @@ def _apply_rename_columns(df, options):
             raise CommandError(
                 f"Entrada inválida em --rename-columns: {entry}. Use antigo:novo", 2
             )
-        mapping[old_name] = new_name
+        column = find_column(df, old_name)
+        if column is None:
+            unknown_columns.append(old_name)
+        else:
+            mapping[column] = new_name
 
-    unknown_columns = [column for column in mapping if column not in df.columns]
     if unknown_columns:
         raise CommandError(
             f"Coluna(s) inexistente(s) em --rename-columns: {', '.join(unknown_columns)}",
@@ -462,23 +501,31 @@ def _text_fix_types(report, redact_values):
         lines.append("Nenhuma coluna numérica armazenada como texto encontrada")
     for column_report in report["columns"]:
         column = column_report["column"]
-        type_name = column_report["type"]
-        if column_report["failed_count"]:
-            lines.append(
-                f'"{column}": convertida para {type_name}, '
-                f"{format_int_ptbr(column_report['failed_count'])} valores não "
-                "convertidos (viraram nulo):"
+        if column_report["converted"]:
+            lines.append(f'"{column}": convertida para {column_report["type"]}')
+            continue
+        lines.append(
+            f'"{column}": não convertida, '
+            f"{format_int_ptbr(column_report['failed_count'])} valores não são "
+            "números (a coluna continua como texto):"
+        )
+        lines.extend(
+            _text_examples(
+                column_report["failed_examples"],
+                column_report["failed_distinct"],
+                redact_values,
             )
-            lines.extend(
-                _text_examples(
-                    column_report["failed_examples"],
-                    column_report["failed_distinct"],
-                    redact_values,
-                )
-            )
-        else:
-            lines.append(f'"{column}": convertida para {type_name}')
+        )
+    if any(not column_report["converted"] for column_report in report["columns"]):
+        lines.append(
+            'Se esses valores querem dizer "sem dado", --null-values os troca por '
+            'nulo antes da conversão (ex.: --null-values "N/D,-" --fix-types).'
+        )
     return lines
+
+
+def _text_null_values(report, redact_values):
+    return [f"{format_int_ptbr(report['cells_replaced'])} células trocadas por nulo"]
 
 
 def _text_fill_null(report, redact_values):
@@ -565,13 +612,19 @@ def _log_fix_types(flag, report):
         log.info("%s: nenhuma coluna encontrada", flag)
     for column_report in report["columns"]:
         column = column_report["column"]
-        log.info('%s: "%s" convertida para %s', flag, column, column_report["type"])
-        _log_failed(
-            flag,
-            column,
-            column_report["failed_count"],
-            "valores não convertidos (viraram nulo)",
-        )
+        if column_report["converted"]:
+            log.info('%s: "%s" convertida para %s', flag, column, column_report["type"])
+        else:
+            _log_failed(
+                flag,
+                column,
+                column_report["failed_count"],
+                "valores não são números; coluna não convertida",
+            )
+
+
+def _log_null_values(flag, report):
+    log.info("%s: %s células trocadas por nulo", flag, report["cells_replaced"])
 
 
 def _log_fill_null(flag, report):
@@ -611,7 +664,10 @@ _COLUMN_OPERATIONS = (
         _log_rename_columns,
     ),
 )
+# --null-values vem primeiro: os valores ainda estão como no arquivo (antes de
+# --lowercase, por exemplo), e o --fix-types já recebe os nulos.
 _VALUE_OPERATIONS = (
+    _Operation("null_values", _apply_null_values, _text_null_values, _log_null_values),
     _Operation("trim", _string_operator("strip_chars"), _text_nothing, _log_applied),
     _Operation(
         "lowercase", _string_operator("to_lowercase"), _text_nothing, _log_applied
@@ -692,9 +748,9 @@ def _redact_report(report):
 # ----------------------------------------------------------------
 # Comando
 # ----------------------------------------------------------------
-def diagnose(filename, sep=None, encoding=None, sheet=None):
+def diagnose(filename, sep=None, encoding=None, sheet=None, table=None):
     """Diagnóstico sem alterar o arquivo (`clean` sem operações)."""
-    loaded = load_input(filename, sep, encoding, sheet=sheet)
+    loaded = load_input(filename, sep, encoding, sheet=sheet, table=table)
     findings = analyze_clean(loaded.df)
     log.info(
         "diagnóstico — %s problemas (%s)",
@@ -712,6 +768,7 @@ def apply_operations(
     sep=None,
     encoding=None,
     sheet=None,
+    table=None,
 ):
     """Aplica as operações de `options` e grava em `output`, se informado.
 
@@ -722,12 +779,12 @@ def apply_operations(
     if overwrite and output is None:
         raise CommandError("--overwrite só tem efeito com --output.", 2)
 
-    loaded = load_input(filename, sep, encoding, sheet=sheet)
+    loaded = load_input(filename, sep, encoding, sheet=sheet, table=table)
 
     output_type = None
     if output is not None:
         output_type = output_file_type(output)
-        check_output(output, overwrite)
+        check_output(output, overwrite, loaded)
 
     # Sem --decimal-separator, vale a convenção do arquivo ("," num CSV
     # separado por ";", onde "1.500" é mil e quinhentos).
@@ -741,7 +798,7 @@ def apply_operations(
     df = _run_phase(df, options, _VALUE_OPERATIONS, reports)
 
     if output is not None:
-        write_output(df, output, output_type)
+        write_output(df, output, output_type, loaded.sheet)
     return CleanResult(loaded, df, reports, output, output_type)
 
 

@@ -8,6 +8,7 @@ import xlsxwriter
 from helpers import isolated_filesystem, load_json, read_log
 
 from datatool import mcp_server
+from datatool.files import list_sheets
 from datatool.main import app
 
 
@@ -360,3 +361,98 @@ class TestMcp:
 
             assert result.is_error is True
             assert result.structured_content["error"]["exit_code"] == 2
+
+
+class TestWritingBack:
+    """Gravar sobre a própria planilha de várias abas apagaria as outras (DT52)."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            ["clean", "relatorio.xlsx", "--trim", "--output", "relatorio.xlsx"],
+            ["convert", "relatorio.xlsx", "relatorio.xlsx"],
+        ],
+    )
+    def test_refuses_and_keeps_every_sheet(self, runner, command):
+        with isolated_filesystem():
+            _relatorio()
+
+            result = runner.invoke(
+                app, [*command, "--sheet", "Vendas 2025", "--overwrite"]
+            )
+
+            assert result.exit_code == 2, result.stdout
+            assert result.stdout == (
+                "relatorio.xlsx tem 3 abas (Resumo, Vendas 2025, Clientes); "
+                "gravar nele apagaria as outras. Grave em outro arquivo.\n"
+            )
+            assert [sheet.name for sheet in list_sheets("relatorio.xlsx")] == [
+                "Resumo",
+                "Vendas 2025",
+                "Clientes",
+            ]
+
+    def test_refuses_even_without_overwrite(self, runner):
+        # Sem a recusa, a mensagem seria "use --overwrite", que leva à perda.
+        with isolated_filesystem():
+            _relatorio()
+
+            result = runner.invoke(
+                app, ["clean", "relatorio.xlsx", "--trim", "--output", "relatorio.xlsx"]
+            )
+
+            assert result.exit_code == 2
+            assert "apagaria as outras" in result.stdout
+
+    def test_refuses_a_hidden_sheet_too(self, runner):
+        with isolated_filesystem():
+            _workbook(
+                "oculta.xlsx",
+                {"Dados": VENDAS, "Rascunho": [["x"], [1]]},
+                hidden=("Rascunho",),
+            )
+
+            result = runner.invoke(
+                app,
+                [
+                    "clean",
+                    "oculta.xlsx",
+                    "--trim",
+                    "--output",
+                    "oculta.xlsx",
+                    "--overwrite",
+                ],
+            )
+
+            assert result.exit_code == 2
+            assert len(list_sheets("oculta.xlsx")) == 2
+
+    def test_single_sheet_workbook_can_be_overwritten(self, runner):
+        with isolated_filesystem():
+            _workbook("uma.xlsx", {"Vendas": VENDAS})
+
+            result = runner.invoke(
+                app,
+                ["clean", "uma.xlsx", "--trim", "--output", "uma.xlsx", "--overwrite"],
+            )
+
+            assert result.exit_code == 0, result.stdout
+            assert [sheet.name for sheet in list_sheets("uma.xlsx")] == ["Vendas"]
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            ["clean", "relatorio.xlsx", "--trim", "--output", "vendas.xlsx"],
+            ["convert", "relatorio.xlsx", "vendas.xlsx"],
+        ],
+    )
+    def test_other_file_keeps_the_sheet_name(self, runner, command):
+        with isolated_filesystem():
+            _relatorio()
+
+            result = runner.invoke(app, [*command, "--sheet", "Vendas 2025"])
+
+            assert result.exit_code == 0, result.stdout
+            assert [sheet.name for sheet in list_sheets("vendas.xlsx")] == [
+                "Vendas 2025"
+            ]

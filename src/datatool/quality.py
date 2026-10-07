@@ -1,4 +1,5 @@
 import re
+import shlex
 from collections import namedtuple
 
 import polars as pl
@@ -20,8 +21,8 @@ from .inference import (
 # - `message`: resumo legível, o mesmo no texto e no JSON (sem valores de
 #   célula, que ficam em `examples`);
 # - `count` + `count_unit`: quantos `rows` (linhas), `values` (valores de
-#   célula), `formats` (formatos distintos) ou `variants` (variações de
-#   capitalização) têm o problema;
+#   célula), `formats` (formatos distintos), `variants` (variações de
+#   capitalização) ou `columns` (colunas) têm o problema;
 # - `examples`: valores de célula que ilustram o problema, omitidos por
 #   --redact-values.
 Finding = namedtuple(
@@ -34,11 +35,13 @@ ROWS = "rows"
 VALUES = "values"
 FORMATS = "formats"
 VARIANTS = "variants"
+COLUMNS = "columns"
 _UNIT_NOUNS = {
     ROWS: "linhas",
     VALUES: "valores",
     FORMATS: "formatos",
     VARIANTS: "variações",
+    COLUMNS: "colunas",
 }
 
 _EMAIL_MATCH_RATIO = 0.5
@@ -219,15 +222,30 @@ def detect_numeric_as_text(df, dates=None, documents=None, decimal_separator=Non
             for row in counts.iter_rows(named=True)
             if parse_number(row[column], separator) is not None
         )
-        findings.append(
-            Finding(
-                "types",
-                f'"{column}" está armazenada como texto mas parece numérica',
-                column,
-                numeric_count,
-                VALUES,
+        other_count = counts["count"].sum() - numeric_count
+        if other_count:
+            # O `clean --fix-types` não converte a coluna (DT49), então ela não
+            # é "types", que dispara a sugestão.
+            findings.append(
+                Finding(
+                    "mixed_types",
+                    f'"{column}" parece numérica, mas '
+                    f"{format_int_ptbr(other_count)} valores não são números",
+                    column,
+                    other_count,
+                    VALUES,
+                )
             )
-        )
+        else:
+            findings.append(
+                Finding(
+                    "types",
+                    f'"{column}" está armazenada como texto mas parece numérica',
+                    column,
+                    numeric_count,
+                    VALUES,
+                )
+            )
     return findings
 
 
@@ -310,6 +328,25 @@ def detect_leading_trailing_whitespace(df):
                     column,
                     count,
                     VALUES,
+                )
+            )
+    return findings
+
+
+def detect_column_name_whitespace(df):
+    findings = []
+    for column in df.columns:
+        name = column.strip()
+        if name != column and name:
+            rename = shlex.quote(f"{name}:{name}")
+            findings.append(
+                Finding(
+                    "column_name_whitespace",
+                    "nome da coluna com espaços nas pontas; para tirá-los: "
+                    f"--rename-columns {rename}",
+                    column,
+                    1,
+                    COLUMNS,
                 )
             )
     return findings
@@ -422,6 +459,7 @@ def analyze(df, decimal_separator=None):
 
 def analyze_clean(df):
     findings = []
+    findings.extend(detect_column_name_whitespace(df))
     findings.extend(detect_invalid_emails(df))
     findings.extend(detect_phone_format_variance(df))
     findings.extend(detect_leading_trailing_whitespace(df))

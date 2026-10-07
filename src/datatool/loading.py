@@ -14,9 +14,11 @@ from .files import (
     SUPPORTED_EXTENSIONS,
     FileType,
     csv_options_error,
+    default_table,
     find_sheet,
     infer_file_type,
     list_sheets,
+    list_tables,
     read_file,
     save_file,
 )
@@ -95,6 +97,33 @@ def _read_excel_input(filename, sheet):
     raise CommandError(f"Nenhuma aba de {filename} tem dados.", 1)
 
 
+def _read_sqlite_input(filename, table):
+    """Lê a tabela pedida em `table` ou, sem ela, a de `default_table`.
+    Devolve o DataFrame e o resumo {table, tables} do JSON."""
+    tables = list_tables(filename)
+    if not tables:
+        raise CommandError(f"{filename} não tem nenhuma tabela.", 1)
+    if table is not None:
+        if table not in tables:
+            raise CommandError(
+                f'A tabela "{table}" não existe em {filename}. '
+                f"Tabelas: {', '.join(tables)}.",
+                2,
+            )
+        selected = table
+    else:
+        selected = default_table(filename, tables)
+        if selected is None:
+            raise CommandError(
+                f"Não foi possível decidir qual tabela ler de {filename}. "
+                f"Tabelas: {', '.join(tables)}. Use --table para escolher uma.",
+                2,
+            )
+    df = read_file(FileType.SQLITE, filename, table=selected).df
+    log.info("tabela lida: %s (%s tabelas)", selected, len(tables))
+    return df, {"table": selected, "tables": tables}
+
+
 def _sheet_summary(selection):
     return {
         "sheet": selection.name,
@@ -127,7 +156,13 @@ def sheet_warning(loaded):
 
 
 def load_input(
-    filename, sep=None, encoding=None, file_type=None, type_option=None, sheet=None
+    filename,
+    sep=None,
+    encoding=None,
+    file_type=None,
+    type_option=None,
+    sheet=None,
+    table=None,
 ):
     if not os.path.exists(filename):
         raise CommandError(f"O arquivo {filename} não existe.", 2)
@@ -141,12 +176,17 @@ def load_input(
         raise CommandError(options_error, 2)
     if sheet is not None and file_type != FileType.XLSX:
         raise CommandError("--sheet só vale para arquivos Excel (xlsx).", 2)
+    if table is not None and file_type != FileType.SQLITE:
+        raise CommandError("--table só vale para arquivos SQLite.", 2)
 
     selection = None
+    table_summary = None
     decimal_separator = None
     try:
         if file_type == FileType.XLSX:
             df, selection = _read_excel_input(filename, sheet)
+        elif file_type == FileType.SQLITE:
+            df, table_summary = _read_sqlite_input(filename, table)
         else:
             df, decimal_separator = read_file(file_type, filename, sep, encoding)
     except CommandError:
@@ -159,6 +199,8 @@ def load_input(
     summary = file_summary(filename, file_type, df)
     if selection is not None:
         summary.update(_sheet_summary(selection))
+    if table_summary is not None:
+        summary.update(table_summary)
     return LoadedInput(filename, file_type, df, summary, selection, decimal_separator)
 
 
@@ -166,8 +208,32 @@ def output_file_type(filename, file_type=None, type_option=None):
     return _resolve_file_type(filename, file_type, type_option)
 
 
-def check_output(filename, overwrite=False):
-    """Valida o destino antes de processar, para falhar antes do trabalho."""
+def _sheets_erased(filename, loaded):
+    """As abas da planilha lida, se gravar em `filename` apagaria as outras: o
+    destino é a própria planilha de entrada, e ela tem mais de uma aba (a
+    gravação cria um arquivo com uma aba só). Senão, None."""
+    if loaded is None or loaded.sheet is None:
+        return None
+    sheets = loaded.sheet.sheets
+    if (
+        len(sheets) > 1
+        and os.path.exists(filename)
+        and os.path.samefile(filename, loaded.filename)
+    ):
+        return sheets
+    return None
+
+
+def check_output(filename, overwrite=False, loaded=None):
+    """Valida o destino antes de processar, para falhar antes do trabalho.
+    `loaded`: a entrada já lida, para recusar gravar sobre ela quando isso
+    apagaria outras abas."""
+    if sheets := _sheets_erased(filename, loaded):
+        raise CommandError(
+            f"{filename} tem {len(sheets)} abas ({_sheet_names(sheets)}); "
+            "gravar nele apagaria as outras. Grave em outro arquivo.",
+            2,
+        )
     if os.path.exists(filename) and not overwrite:
         raise CommandError(
             f"O destino {filename} já existe. Use --overwrite para substituí-lo.",
@@ -178,9 +244,11 @@ def check_output(filename, overwrite=False):
         raise CommandError(f"Não é possível gravar em {filename}.", 3)
 
 
-def write_output(df, filename, file_type):
+def write_output(df, filename, file_type, sheet=None):
+    """`sheet`: a aba lida (`SheetSelection`), cujo nome a aba gravada mantém
+    quando o destino é xlsx."""
     try:
-        save_file(df, file_type, filename)
+        save_file(df, file_type, filename, sheet.name if sheet else None)
     except Exception as error:
         raise CommandError(
             f"Não foi possível gravar {filename} como {file_type.value}: {error}", 1
@@ -203,10 +271,36 @@ def parse_column_list(spec):
     return [column.strip() for column in spec.split(",")]
 
 
+def find_column(df, name):
+    """O nome da coluna `name` em `df`, ou None se não houver.
+
+    `name` chega sem espaços nas pontas (`parse_column_list` os tira), e
+    cabeçalhos exportados do Excel costumam tê-los (`" email "`): a coluna é a
+    que tem esse nome sem os espaços. Se mais de uma casar (`"email"` e
+    `" email "`), levanta `CommandError`, em vez de escolher uma (DT48).
+    """
+    matches = [column for column in df.columns if column.strip() == name]
+    if len(matches) > 1:
+        names = ", ".join(f'"{column}"' for column in matches)
+        raise CommandError(
+            f'Mais de uma coluna se chama "{name}" sem os espaços nas pontas: '
+            f"{names}. Renomeie uma delas antes.",
+            2,
+        )
+    return matches[0] if matches else None
+
+
 def resolve_columns(df, spec, option_name):
-    """Lista de colunas de `spec` ("a,b"), exigindo que todas existam em `df`."""
-    columns = parse_column_list(spec)
-    unknown_columns = [column for column in columns if column not in df.columns]
+    """Lista de colunas de `spec` ("a,b"), exigindo que todas existam em `df`.
+    Devolve os nomes como estão em `df` (ver `find_column`)."""
+    columns = []
+    unknown_columns = []
+    for name in parse_column_list(spec):
+        column = find_column(df, name)
+        if column is None:
+            unknown_columns.append(name)
+        else:
+            columns.append(column)
     if unknown_columns:
         raise CommandError(
             f"Coluna(s) inexistente(s) em {option_name}: {', '.join(unknown_columns)}",

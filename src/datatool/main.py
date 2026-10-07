@@ -44,6 +44,14 @@ SheetOption = Annotated[
         "Se omitido, lê a primeira aba com dados.",
     ),
 ]
+TableOption = Annotated[
+    str | None,
+    typer.Option(
+        "--table",
+        help="Tabela do banco SQLite de entrada. Se omitido, lê a tabela com o "
+        "nome do arquivo ou, se o banco tem uma só, essa.",
+    ),
+]
 OverwriteOption = Annotated[
     bool,
     typer.Option(
@@ -122,6 +130,7 @@ def convert(
     sep: SepOption = None,
     encoding: EncodingOption = None,
     sheet: SheetOption = None,
+    table: TableOption = None,
 ):
     """Converte um arquivo de um formato para outro.
 
@@ -158,6 +167,7 @@ def convert(
             overwrite=overwrite,
             reload_target=show_stats,
             sheet=sheet,
+            table=table,
         ),
         to_document=convert_command.to_document,
         print_text=lambda result: convert_command.print_text(result, show_stats),
@@ -176,6 +186,7 @@ def info(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
     sheet: SheetOption = None,
+    table: TableOption = None,
 ):
     """Diagnostica o arquivo e sugere o comando que corrige cada problema.
 
@@ -186,7 +197,7 @@ def info(
         "info",
         output_format,
         lambda: info_command.diagnose(
-            filename, sep=sep, encoding=encoding, sheet=sheet
+            filename, sep=sep, encoding=encoding, sheet=sheet, table=table
         ),
         to_document=lambda result: info_command.to_document(result, redact_values),
         print_text=lambda result: info_command.print_text(result, redact_values),
@@ -223,6 +234,7 @@ def profile(
     ] = None,
     redact_values: RedactValuesOption = False,
     sheet: SheetOption = None,
+    table: TableOption = None,
 ):
     """Estatísticas de cada coluna.
 
@@ -241,6 +253,7 @@ def profile(
             columns=columns,
             max_columns=max_columns,
             sheet=sheet,
+            table=table,
         ),
         to_document=lambda result: profile_command.to_document(result, redact_values),
         print_text=lambda result: profile_command.print_text(result, redact_values),
@@ -254,6 +267,14 @@ def profile(
 @logged("clean")
 def clean(
     filename: str,
+    null_values: Annotated[
+        str | None,
+        typer.Option(
+            help='Valores que querem dizer "sem dado", separados por vírgula '
+            "(ex.: 'N/D,-'): viram nulo nas colunas de texto, antes das demais "
+            "operações."
+        ),
+    ] = None,
     trim: Annotated[bool, typer.Option("--trim")] = False,
     lowercase: Annotated[bool, typer.Option("--lowercase")] = False,
     uppercase: Annotated[bool, typer.Option("--uppercase")] = False,
@@ -322,6 +343,7 @@ def clean(
     encoding: EncodingOption = None,
     redact_values: RedactValuesOption = False,
     sheet: SheetOption = None,
+    table: TableOption = None,
 ):
     """Diagnostica e corrige problemas de qualidade.
 
@@ -331,6 +353,7 @@ def clean(
     --normalize-dates), corrige e grava em --output, ou imprime o CSV no stdout.
     """
     options = clean_command.CleanOptions(
+        null_values=null_values,
         trim=trim,
         lowercase=lowercase,
         uppercase=uppercase,
@@ -372,7 +395,7 @@ def clean(
             "clean",
             output_format,
             lambda: clean_command.diagnose(
-                filename, sep=sep, encoding=encoding, sheet=sheet
+                filename, sep=sep, encoding=encoding, sheet=sheet, table=table
             ),
             to_document=lambda result: clean_command.diagnosis_document(
                 result, redact_values
@@ -398,6 +421,7 @@ def clean(
             sep=sep,
             encoding=encoding,
             sheet=sheet,
+            table=table,
         ),
         to_document=lambda result: clean_command.result_document(result, redact_values),
         print_text=lambda result: clean_command.print_result(result, redact_values),

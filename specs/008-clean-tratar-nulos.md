@@ -29,5 +29,19 @@ Coberto por testes em [tests/test_cli.py](../tests/test_cli.py) (`TestCleanFillN
 - Ambas reportam a contagem no stdout (`"N células preenchidas"` / `"N linhas removidas"`), mesmo quando o resultado é gravado em arquivo via `--output`.
 - Combinável com as flags de [006](006-clean-operadores-string.md)/[007](007-clean-remover-duplicidades.md); ordem de aplicação: operadores de texto → `--fill-null` → `--drop-null` → `--remove-duplicates`.
 
+## Extensão — `--null-values` (2026-10-07)
+Adicionada junto com o débito técnico DT49, que fez o `--fix-types` deixar de converter colunas com valores que não são números. Antes, uma coluna de idades com `N/D` virava número, e o `N/D`, nulo; depois do DT49, ela fica como texto, e faltava um jeito explícito de dizer que `N/D` é "sem dado".
+
+```bash
+datatool clean dados.csv --null-values "N/D,-" --fix-types
+```
+
+- [x] `--null-values v1,v2` troca por nulo, em todas as colunas de texto, as células iguais a um desses valores, comparadas sem os espaços nas pontas e diferenciando maiúsculas de minúsculas; colunas de outros tipos não mudam
+- [x] Roda antes de todas as operações de valor (inclusive `--trim` e `--lowercase`), então `--fix-types`, `--fill-null` e `--drop-null` já recebem os nulos
+- [x] Reporta `N células trocadas por nulo` (`cells_replaced` no JSON); `null_values` no `datatool_clean_apply` do servidor MCP
+- [x] Quando o `--fix-types` deixa uma coluna sem converter, o texto sugere `--null-values`
+
+Coberto por testes em [tests/test_clean_operations.py](../tests/test_clean_operations.py) (`TestCleanNullValues`) e [tests/test_mcp_server.py](../tests/test_mcp_server.py).
+
 ## Dependências
 [001-convert](001-convert.md), [006-clean-operadores-string](006-clean-operadores-string.md), [007-clean-remover-duplicidades](007-clean-remover-duplicidades.md)

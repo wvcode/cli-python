@@ -63,11 +63,11 @@ class TestLateAnomaly:
             assert result.exit_code == 0, result.stdout
             problems = load_json(result.stdout)["problems"]
             assert {
-                "category": "types",
+                "category": "mixed_types",
                 "column": "idade",
-                "count": count,
+                "count": 1,
                 "count_unit": "values",
-                "message": '"idade" está armazenada como texto mas parece numérica',
+                "message": '"idade" parece numérica, mas 1 valores não são números',
             } in problems
 
     def test_convert_keeps_the_value_instead_of_nulling_it(
@@ -81,7 +81,7 @@ class TestLateAnomaly:
             with open("saida.csv", encoding="utf8") as f:
                 assert f.read().splitlines()[-1] == f"{count},N/D"
 
-    def test_fix_types_converts_and_reports_the_odd_value(
+    def test_fix_types_keeps_the_column_and_reports_the_odd_value(
         self, runner, filename, write, count
     ):
         with isolated_filesystem():
@@ -103,5 +103,6 @@ class TestLateAnomaly:
             [operation] = load_json(result.stdout)["operations"]
             [column] = operation["columns"]
             assert column["column"] == "idade"
+            assert column["converted"] is False
             assert column["failed_count"] == 1
             assert column["failed_examples"] == ["N/D"]

@@ -307,6 +307,81 @@ class TestDatatoolCleanApply:
             assert column_report["unrecognized_examples"] == []
             assert column_report["unrecognized_count"] == 1
 
+    def test_null_values(self):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("idade\n" + "".join(f"{i}\n" for i in range(20, 29)) + "N/D\n")
+
+            result = _call(
+                mcp_server.build_server("."),
+                "datatool_clean_apply",
+                filename="dados.csv",
+                output="saida.csv",
+                null_values="N/D",
+                fix_types=True,
+            )
+
+            assert result.is_error is False, result.content[0].text
+            operations = result.structured_content["operations"]
+            assert operations[0] == {"operation": "null_values", "cells_replaced": 1}
+            assert operations[1]["columns"][0]["converted"] is True
+
+    def test_drop_null_columns(self):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a,b\n1,\n,2\n3,4\n")
+
+            result = _call(
+                mcp_server.build_server("."),
+                "datatool_clean_apply",
+                filename="dados.csv",
+                output="saida.csv",
+                drop_null=True,
+                drop_null_columns="a",
+            )
+
+            assert result.is_error is False, result.content[0].text
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "a,b\n1,\n3,4\n"
+
+    def test_columns_is_still_accepted_as_the_old_name(self):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a,b\n1,\n,2\n3,4\n")
+
+            result = _call(
+                mcp_server.build_server("."),
+                "datatool_clean_apply",
+                filename="dados.csv",
+                output="saida.csv",
+                drop_null=True,
+                columns="a",
+            )
+
+            assert result.is_error is False, result.content[0].text
+            with open("saida.csv", encoding="utf8") as f:
+                assert f.read() == "a,b\n1,\n3,4\n"
+
+    def test_drop_null_columns_and_columns_together_is_an_error(self):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write("a,b\n1,\n")
+
+            result = _call(
+                mcp_server.build_server("."),
+                "datatool_clean_apply",
+                filename="dados.csv",
+                output="saida.csv",
+                drop_null=True,
+                drop_null_columns="a",
+                columns="b",
+            )
+
+            assert result.is_error is True
+            assert result.structured_content["error"]["exit_code"] == 2
+            assert "drop_null_columns" in result.content[0].text
+            assert not os.path.exists("saida.csv")
+
 
 class TestDatatoolConvert:
     def test_happy_path(self):
@@ -451,6 +526,43 @@ class TestExecutionLog:
             with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
                 last_line = f.read().splitlines()[-1]
             assert f"mcp info: fim — exit code {exit_code}" in last_line
+
+    @pytest.mark.parametrize(
+        ("arguments", "message"),
+        [
+            (
+                {"filename": "../fora.csv", "output": "saida.csv"},
+                "O caminho está fora da raiz do servidor: ../fora.csv",
+            ),
+            (
+                {"filename": "dados.csv", "output": "dados.csv"},
+                "O destino não pode ser o próprio arquivo de entrada: dados.csv",
+            ),
+            (
+                {"filename": "dados.csv", "output": "existe.csv"},
+                "O destino existe.csv já existe. Passe overwrite=true para "
+                "substituí-lo.",
+            ),
+        ],
+    )
+    def test_sandbox_errors_log_the_reason(self, arguments, message):
+        # DT37: como os erros de comando, a mensagem vai para o log.
+        with isolated_filesystem():
+            for filename in ("dados.csv", "existe.csv"):
+                with open(filename, "w", encoding="utf8") as f:
+                    f.write("nome\nAna\n")
+
+            _call(
+                mcp_server.build_server("."),
+                "datatool_clean_apply",
+                trim=True,
+                **arguments,
+            )
+
+            with open(os.path.join("logs", "datatool.log"), encoding="utf-8") as f:
+                log = f.read()
+            assert "ERROR   [" in log
+            assert f"mcp clean_apply: {message}" in log
 
 
 class TestNoTyperDependency:

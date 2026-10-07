@@ -82,19 +82,21 @@ datatool clean vendas.csv --fix-types --remove-duplicates --output limpo.parquet
 
 Sem problemas, `problems` e `suggestions` são listas vazias.
 
-**Significado de `count` por categoria** (é o mesmo número que já existe nos `Finding`s). Desde o débito técnico DT20 ([debito-tecnico.md](debito-tecnico.md)), cada problema traz também `count_unit`, que diz o que `count` conta: `rows` (linhas), `values` (valores de célula), `formats` (formatos distintos) ou `variants` (variações de capitalização). O campo é aditivo, então `schema_version` continua 1. `message` é sempre um resumo sem valores de célula; os valores, quando há, ficam em `examples`.
+**Significado de `count` por categoria** (é o mesmo número que já existe nos `Finding`s). Desde o débito técnico DT20 ([debito-tecnico.md](debito-tecnico.md)), cada problema traz também `count_unit`, que diz o que `count` conta: `rows` (linhas), `values` (valores de célula), `formats` (formatos distintos), `variants` (variações de capitalização) ou `columns` (colunas; desde o DT48). O campo é aditivo, então `schema_version` continua 1. `message` é sempre um resumo sem valores de célula; os valores, quando há, ficam em `examples`.
 
 | `category` | Origem | `column` | `count` | `count_unit` |
 |------------|--------|----------|---------|--------------|
 | `nulls` | info | coluna | valores nulos | `values` |
 | `duplicates` | info | `null` | linhas inteiras duplicadas | `rows` |
 | `dates` | info | coluna | formatos de data distintos | `formats` |
-| `types` | info | coluna | valores não nulos da coluna inteira que parecem numéricos (ver abaixo) | `values` |
+| `types` | info | coluna | valores não nulos da coluna inteira que parecem numéricos (ver abaixo); só quando todos são números | `values` |
+| `mixed_types` | info | coluna | valores que não são números numa coluna que parece numérica; sem sugestão, porque o `--fix-types` não a converte (DT49) | `values` |
 | `invalid_emails` | clean | coluna | valores com e-mail inválido | `values` |
 | `phone_format_variance` | clean | coluna | formatos de telefone distintos | `formats` |
 | `whitespace` | clean | coluna | valores com espaços nas bordas | `values` |
 | `key_duplicates` | clean | coluna | valores duplicados numa coluna que parece chave | `values` |
 | `case_inconsistency` | clean | coluna | variações de capitalização | `variants` |
+| `column_name_whitespace` | clean | coluna (o nome com os espaços) | sempre 1 (DT48) | `columns` |
 | `document_invalid`, `document_all_same`, `document_out_of_format`, `document_numeric_column` | info, clean | coluna | valores de CPF/CNPJ com o problema ([018](018-cpf-cnpj-validacao.md)) | `values` |
 | `document_format_variance` | info, clean | coluna | formatos (com e sem máscara, sempre 2) | `formats` |
 
@@ -157,7 +159,7 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
        "unrecognized_examples": ["32/13/2020", "ontem"]}
     ]},
     {"operation": "fix_types", "columns": [
-      {"column": "valor", "type": "float", "failed_count": 1, "failed_distinct": 1, "failed_examples": ["a combinar"]}
+      {"column": "valor", "converted": false, "type": null, "failed_count": 1, "failed_distinct": 1, "failed_examples": ["a combinar"]}
     ]},
     {"operation": "fill_null", "cells_filled": 14},
     {"operation": "drop_null", "rows_removed": 3},
@@ -173,7 +175,8 @@ Novas categorias (ex.: as de CPF/CNPJ de [018](018-cpf-cnpj-validacao.md)) entra
 | `rename_columns` | `mapping` (antigo → novo) |
 | `trim`, `lowercase`, `uppercase`, `normalize_case` | nenhum (o modo texto também não reporta contagem) |
 | `normalize_dates` | `columns`: `column`, `normalized`, `unrecognized_count` (linhas), `unrecognized_distinct` (valores distintos), `unrecognized_examples` (até 10 valores distintos, em ordem alfabética); lista vazia se nenhuma coluna de data foi encontrada |
-| `fix_types` | `columns`: `column`, `type` (`int`/`float`), `failed_count` (linhas), `failed_distinct` (valores distintos), `failed_examples` (até 10 valores distintos, em ordem alfabética); lista vazia se nenhuma coluna foi encontrada |
+| `fix_types` | `columns`: `column`, `converted` (desde o DT49: `false` quando algum valor não é número e a coluna fica como texto), `type` (`int`/`float`, ou `null` se não convertida), `failed_count` (linhas), `failed_distinct` (valores distintos), `failed_examples` (até 10 valores distintos, em ordem alfabética); lista vazia se nenhuma coluna foi encontrada |
+| `null_values` | `cells_replaced` (desde a extensão `--null-values` de [008](008-clean-tratar-nulos.md)) |
 | `fill_null` | `cells_filled` |
 | `drop_null` | `rows_removed` |
 | `remove_duplicates` | `rows_removed` |

@@ -55,12 +55,30 @@ class TestJsonOutput:
     def test_types_count_covers_whole_column(self, runner):
         with isolated_filesystem():
             with open("dados.csv", "w", encoding="utf8") as f:
-                f.write("valor\nN/D\n" + "\n".join(str(v) for v in range(2999)) + "\n")
+                f.write("valor\n" + "\n".join(f"R$ {v}" for v in range(2999)) + "\n")
 
             result = runner.invoke(app, ["info", "dados.csv", "--format", "json"])
             document = load_json(result.stdout)
             [types] = [p for p in document["problems"] if p["category"] == "types"]
             assert types["count"] == 2999
+
+    def test_mixed_types_count_covers_whole_column(self, runner):
+        with isolated_filesystem():
+            with open("dados.csv", "w", encoding="utf8") as f:
+                f.write(
+                    "valor\n" + "\n".join(str(v) for v in range(2999)) + "\nN/D\n-\n"
+                )
+
+            result = runner.invoke(app, ["info", "dados.csv", "--format", "json"])
+            document = load_json(result.stdout)
+            assert {
+                "category": "mixed_types",
+                "column": "valor",
+                "count": 2,
+                "count_unit": "values",
+                "message": '"valor" parece numérica, mas 2 valores não são números',
+            } in document["problems"]
+            assert not document["suggestions"]
 
     def test_profile_json(self, runner):
         with isolated_filesystem():
@@ -171,14 +189,15 @@ class TestJsonOutput:
                     "columns": [
                         {
                             "column": "idade",
-                            "type": "int",
+                            "converted": False,
+                            "type": None,
                             "failed_count": 1,
                             "failed_distinct": 1,
                             "failed_examples": ["N/D"],
                         }
                     ],
                 },
-                {"operation": "fill_null", "cells_filled": 1},
+                {"operation": "fill_null", "cells_filled": 0},
                 {"operation": "remove_duplicates", "rows_removed": 1},
             ]
             assert document["output"] == {

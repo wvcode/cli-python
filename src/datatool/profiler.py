@@ -81,9 +81,10 @@ def run(
     columns=None,
     max_columns=None,
     sheet=None,
+    table=None,
 ):
     """Perfila o arquivo; levanta `CommandError` em entrada ou opção inválida."""
-    loaded = load_input(filename, sep, encoding, sheet=sheet)
+    loaded = load_input(filename, sep, encoding, sheet=sheet, table=table)
     df = loaded.df
 
     key_columns = resolve_columns(df, key, "--key") if key else None
