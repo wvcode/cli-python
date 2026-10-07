@@ -2,7 +2,7 @@
 
 As mudanças de cada versão do `datatool-cli`. O formato segue o [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/), e as versões seguem o [versionamento semântico](https://semver.org/lang/pt-BR/).
 
-## [0.1.3] — não publicada
+## [0.1.3] — 2026-10-07
 
 ### Corrigido
 
