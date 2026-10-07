@@ -84,5 +84,6 @@ Primeira versão publicada.
 
 - Python 3.10 ou mais novo.
 
+[0.1.3]: https://github.com/wvcode/cli-python/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/wvcode/cli-python/compare/v0.1.0...v0.1.2
 [0.1.0]: https://github.com/wvcode/cli-python/releases/tag/v0.1.0

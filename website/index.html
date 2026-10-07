@@ -527,7 +527,7 @@
     </div>
     <div class="stat-row">
       <div><span class="num">10/10</span><span class="label">user stories do MVP</span></div>
-      <div><span class="num">390</span><span class="label">testes automatizados</span></div>
+      <div><span class="num">436</span><span class="label">testes automatizados</span></div>
       <div><span class="num">26</span><span class="label">specs públicas</span></div>
     </div>
   </div>
@@ -546,13 +546,12 @@ Problemas encontrados:
   <span class="flag">⚠ 1 linhas duplicadas</span>
   <span class="flag">⚠ "data_nascimento" contém 4 formatos de data diferentes</span>
   <span class="flag">⚠ 10 CPFs com dígito verificador inválido</span>
-  <span class="flag">⚠ "idade" está armazenada como texto mas parece numérica</span>
+  <span class="flag">⚠ "idade" parece numérica, mas 1 valores não são números</span>
 
 Sugestões:
-  1. Corrigir tipos <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --fix-types</span>
-  2. Remover duplicidades <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --remove-duplicates</span>
-  3. Normalizar datas <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --normalize-dates</span>
-  4. Tratar valores nulos <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --drop-null</span>
+  1. Remover duplicidades <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --remove-duplicates</span>
+  2. Normalizar datas <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --normalize-dates</span>
+  3. Tratar valores nulos <span class="muted">→</span> <span class="accent">datatool clean clientes.csv --drop-null</span>
 <span class="prompt">$</span> <span class="cursor"></span></pre>
   </div>
 </div>
@@ -573,7 +572,7 @@ Sugestões:
     </div>
     <div class="pain-item">
       <span class="pain-tag">TIPOS</span>
-      <p><strong>Texto que devia ser número.</strong> <code>--fix-types</code> reconhece tanto <code>1,234.56</code> quanto <code>1.234,56</code> e converte para o tipo certo, sem confundir milhar com decimal.</p>
+      <p><strong>Texto que devia ser número.</strong> <code>--fix-types</code> reconhece tanto <code>1,234.56</code> quanto <code>1.234,56</code> e converte para o tipo certo, sem confundir milhar com decimal. Uma coluna com <code>N/D</code> no meio não perde nada: fica como texto, ou vira número com <code>--null-values "N/D"</code>.</p>
     </div>
     <div class="pain-item">
       <span class="pain-tag">DATAS</span>
@@ -644,6 +643,7 @@ telefone
 
 cpf
   <span class="flag">1 valores duplicados</span>
+  <span class="flag">19 CPFs com dígito verificador inválido</span>
 
 cidade
   <span class="muted">"PORTO ALEGRE"</span>

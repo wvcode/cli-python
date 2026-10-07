@@ -175,6 +175,7 @@ telefone
 
 cpf
   1 valores duplicados
+  19 CPFs com dígito verificador inválido
 
 cidade
   "PORTO ALEGRE"
